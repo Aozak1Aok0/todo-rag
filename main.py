@@ -97,11 +97,28 @@ async def root():
     return {"msg": "Todo + LLM API 运行中", "ui": "/rag-ui", "docs": "/docs", "stats": "/stats"}
 
 
+def _api_key() -> str | None:
+    """环境变量优先；Windows 上回退到凭据管理器，免去每次开终端设 key。"""
+    key = os.getenv("DEEPSEEK_API_KEY")
+    if key:
+        return key
+    try:
+        from credentials import get_deepseek_key
+
+        return get_deepseek_key()
+    except Exception:  # noqa: BLE001 —— 非 Windows 或凭据不存在
+        return None
+
+
 def get_client():
-    # 没设置 key 时友好报错，而不是崩在调用处
-    api_key = os.getenv("DEEPSEEK_API_KEY")
+    # 没 key 时友好报错，而不是崩在调用处
+    api_key = _api_key()
     if not api_key:
-        raise HTTPException(status_code=500, detail="未设置 DEEPSEEK_API_KEY 环境变量")
+        raise HTTPException(
+            status_code=500,
+            detail="未找到 DeepSeek API key：设置环境变量 DEEPSEEK_API_KEY，"
+                   "或在 Windows 凭据管理器创建通用凭据 WorkBuddy/DeepSeek",
+        )
     return AsyncOpenAI(api_key=api_key, base_url="https://api.deepseek.com")
 
 

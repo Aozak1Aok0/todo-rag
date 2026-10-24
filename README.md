@@ -112,8 +112,8 @@ cd todo-rag
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 
-# key：环境变量优先；不设时读 Windows 凭据管理器（目标名可用 CRED_TARGET 覆盖）
-$env:DEEPSEEK_API_KEY = "<your key>"
+# key：Windows 上可以完全不设 —— 会自动读 Windows 凭据管理器（WorkBuddy/DeepSeek，可用 CRED_TARGET 覆盖）。
+# 其他系统或想覆盖时：$env:DEEPSEEK_API_KEY = "<your key>"
 
 .\.venv\Scripts\python.exe -m uvicorn main:app --reload
 # 页面 http://127.0.0.1:8000/rag-ui · 文档 http://127.0.0.1:8000/docs
