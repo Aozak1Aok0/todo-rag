@@ -64,6 +64,22 @@
 - `evals/rag-v1-report.md` —— 检索设计、纯向量失效分析、切块策略对比
 - `evals/q8-prompt-ab.md` —— 提示词 A/B/C 对比与假纠正分析
 
+## 前端（React）
+
+`web/` 是一个 Vite + React 的单页应用：提问、答案、引用片段、历史记录（localStorage）。
+
+```powershell
+# 1) 先起后端（另一个终端）
+.\.venv\Scripts\python.exe -m uvicorn main:app --port 8000
+
+# 2) 起前端
+cd web
+npm install
+npm run dev        # http://127.0.0.1:5173（/rag 代理到 :8000）
+```
+
+也可以 `npm run build` 后直接用后端托管：<http://127.0.0.1:8000/app>（`web/dist` 存在时自动挂载）。
+
 ## MCP
 
 | 工具 | 读/写 | 说明 |
@@ -134,6 +150,7 @@ corpus/              评测语料快照（15 个文件，供检索索引使用�
 tests/               冒烟测试（接口 / 持久化 / MCP / 观测）
 docs/                设计与迁移说明、截图
 static/              rag.html + Swagger 静态资源
+web/                 React 前端（Vite，开发时 npm run dev）
 models/              本地 embedding 模型（不入库）
 ```
 

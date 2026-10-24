@@ -29,6 +29,11 @@ RAG_K = int(os.getenv("RAG_K", "8"))  # /rag 默认检索块数
 # 将static目录挂载到/static路径，用于存放静态文件
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
+# 前端（React）构建产物存在时挂到 /app；开发时用 `npm run dev`（Vite 代理到 :8000）
+WEB_DIST = BASE_DIR / "web" / "dist"
+if WEB_DIST.is_dir():
+    app.mount("/app", StaticFiles(directory=WEB_DIST, html=True), name="app")
+
 
 @app.get("/docs", include_in_schema=False)
 async def custom_swagger_ui():
