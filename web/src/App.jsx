@@ -47,10 +47,10 @@ export default function App() {
 
     const t0 = performance.now()
     try {
-      const resp = await fetch('/rag', {
+      const resp = await fetch('/rag-verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q, k }),
+        body: JSON.stringify({ question: q, k, max_revisions: 0 }),
       })
       const data = await resp.json().catch(() => ({}))
       if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`)
@@ -84,7 +84,7 @@ export default function App() {
         <div>
           <h1>知识库问答</h1>
           <div className="sub">
-            本地语料 · 混合检索（向量 + BM25）· DeepSeek 回答
+            本地语料 · 混合检索（向量 + BM25）· DeepSeek 回答 · 独立校验
           </div>
         </div>
         <nav className="links">

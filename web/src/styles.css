@@ -167,3 +167,21 @@ footer .hint { margin-right: 0; }
   header { flex-direction: column; }
   .meta button { margin-left: 0; }
 }
+
+.verify {
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+.verify.ok { border-color: rgba(123, 216, 143, .35); background: rgba(123, 216, 143, .06); }
+.verify.warn { border-color: rgba(255, 180, 84, .35); background: rgba(255, 180, 84, .06); }
+.verify-head { color: var(--muted); }
+.verify.ok .verify-head { color: var(--ok); }
+.verify.warn .verify-head { color: var(--warn); }
+.verify details { margin-top: 8px; }
+.verify summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+.verify .reason { margin-top: 8px; color: var(--muted); font-size: 12.5px; }
+.verify ul { margin: 8px 0 0; padding-left: 18px; color: var(--text); font-size: 12.5px; }
+.verify li { margin: 3px 0; }

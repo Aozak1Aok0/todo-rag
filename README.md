@@ -67,7 +67,7 @@
 
 ## 前端（React）
 
-`web/` 是一个 Vite + React 的单页应用：提问、答案、引用片段、历史记录（localStorage）。
+`web/` 是一个 Vite + React 的单页应用：提问、答案、引用片段、历史记录（localStorage），并在答案下方展示独立校验结果（通过 / N 条未被资料支持，可展开明细）。
 
 ```powershell
 # 1) 先起后端（另一个终端）

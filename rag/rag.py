@@ -40,6 +40,8 @@ DB_DIR = APP / "chroma_db"
 COLLECTION = "pra_corpus"
 
 CHUNK_MODE = os.getenv('CHUNK_MODE', 'window')  # window(实测更好) | symbol(按符号切块，实验用)
+# 这些文件用「按符号切块」：函数体不能被行窗口切开（store.py 的 init_db 就是典型）
+SYMBOL_FILES = {'python/fastapi-api/store.py'}
 CHUNK_LINES = 30        # 每块多少行
 OVERLAP = 8             # 相邻块重叠多少行
 MAX_CHARS = 1500        # 单块字符上限（超长行会被再切）
@@ -106,29 +108,45 @@ JS_FUNC_RE = __import__("re").compile(r"^(?:async\s+)?function\s+([A-Za-z0-9_]+)
 
 
 def structure_outline(text: str):
-    """抽出路由/函数/类的清单（带行号）。
+    """抽出路由/函数/类的清单（带行号），函数后附一句 docstring 摘要。
 
-    为什么需要：问「这个服务有哪些路由」时，30 行一块的窗口要召 8 块才凑得全；
-    一张一行的结构概览能一次给出全貌，也让「跨文件比较接口」有据可依。
+    为什么需要：问「这个服务有哪些路由」「启动时有哪些数据」时，30 行一块的窗口要召 8 块才凑得全；
+    一张一行的结构概览能一次给出全貌。附 docstring 摘要后，函数「做什么」也能被检索到。
     """
-    lines = []
-    for i, line in enumerate(text.splitlines(), 1):
-        if not line or line[:1].isspace():   # 只取顶格代码，避免把函数内的局部变量当成符号
+    src = text.splitlines()
+    out = []
+    for idx, line in enumerate(src):
+        if not line or line[:1].isspace():
             continue
         s = line.strip()
         m = ROUTE_RE.match(s)
         if m:
-            lines.append(f"L{i}: {m.group(1).upper()} {m.group(2)}")
+            out.append(f"L{idx + 1}: {m.group(1).upper()} {m.group(2)}")
             continue
         m = DEF_RE.match(s)
         if m:
-            lines.append(f"L{i}: {m.group(1)} {m.group(2)}()")
+            summary = _docstring_summary(src, idx)
+            out.append(f"L{idx + 1}: {m.group(1)} {m.group(2)}()" + (f" — {summary}" if summary else ""))
             continue
         m = JS_FUNC_RE.match(s)
         if m:
-            lines.append(f"L{i}: function {m.group(1) or m.group(2)}()")
-    return lines
+            out.append(f"L{idx + 1}: function {m.group(1) or m.group(2)}()")
+    return out
 
+
+def _docstring_summary(src, idx, limit=48):
+    """取函数/类定义后第一个 docstring 的首句（够用即可）。"""
+    for j in range(idx + 1, min(idx + 6, len(src))):
+        s = src[j].strip()
+        if not s:
+            continue
+        if s.startswith('"""') or s.startswith("'''"):
+            body = s.strip('"').strip("'").strip()
+            return body[:limit] if body else ""
+        if s.startswith(("@", "#")):
+            continue
+        return ""
+    return ""
 
 def outline_chunk(rel: str, text: str):
     """给代码文件生成一条概览块；没有可抽的东西就返回 None。"""
@@ -247,7 +265,7 @@ def build(rebuild: bool = True):
             docs.append(oc["doc"])
             metas.append(oc["meta"])
         suffix = Path(rel).suffix.lower()
-        if CHUNK_MODE == 'symbol' and suffix in CODE_SUFFIX:
+        if (CHUNK_MODE == 'symbol' or rel in SYMBOL_FILES) and suffix in CODE_SUFFIX:
             # 代码：按符号切块，块头带上「端点/函数/常量」，一块一个语义单元
             pieces = [(s, e, f"{rel} · {h}", b) for s, e, h, b in code_blocks(text, suffix)]
         else:

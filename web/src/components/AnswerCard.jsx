@@ -6,7 +6,7 @@ function fmtMs(ms) {
 }
 
 export default function AnswerCard({ item }) {
-  const { question, answer, sources = [], usage, ms, error, pending } = item
+  const { question, answer, sources = [], usage, ms, error, pending, verification } = item
   const [copied, setCopied] = useState(false)
 
   async function copy() {
@@ -42,6 +42,29 @@ export default function AnswerCard({ item }) {
             <span>引用 {sources.length} 条</span>
             <button className="ghost small" onClick={copy}>{copied ? '已复制' : '复制回答'}</button>
           </div>
+
+          {verification && (
+            <div className={'verify ' + (verification.verdict === 'ok' ? 'ok' : 'warn')}>
+              <div className="verify-head">
+                {verification.verdict === 'ok'
+                  ? '校验：通过（断言均可在资料中找到依据）'
+                  : `校验：${(verification.unsupported || []).length} 条断言未被资料支持`}
+              </div>
+              {((verification.unsupported || []).length > 0 || verification.reason) && (
+                <details>
+                  <summary>查看校验明细</summary>
+                  {verification.reason && <div className="reason">{verification.reason}</div>}
+                  {(verification.unsupported || []).length > 0 && (
+                    <ul>
+                      {verification.unsupported.map((x, i) => (
+                        <li key={i}>{x}</li>
+                      ))}
+                    </ul>
+                  )}
+                </details>
+              )}
+            </div>
+          )}
 
           {sources.length > 0 && (
             <div className="sources">
