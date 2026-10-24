@@ -15,7 +15,7 @@
 
 | 字段 | 含义 |
 |---|---|
-| `kind` | `rag` / `tool` / （后续）`agent` / `eval` |
+| `kind` | `rag` / `chat` / `agent` / `tool`（后续可加 `eval`） |
 | `name` | `POST /rag`、`mcp.search_docs` … |
 | `ok` / `error` | 成功与否、异常类型名（不含堆栈） |
 | `latency_ms` | 端到端耗时 |
@@ -30,12 +30,16 @@
 | 位置 | 事件 | 说明 |
 |---|---|---|
 | `POST /rag` | `rag / POST /rag` | 成功与失败都记；失败带异常类型 |
+| `POST /agent` | `agent / POST /agent` | 两次模型调用的 token 累加；含 `used_tool` |
+| `POST /agent-raw` | `agent / POST /agent-raw` | ReAct 每轮 token 累加；含 `steps` / `used_tool` |
+| `POST /chat` | `chat / POST /chat` | 流式接口：记耗时与消息数（流式未取 usage，token 记 0） |
 | MCP 5 个工具 | `tool / mcp.<name>` | 装饰器 `@traced(...)`，成功/失败/耗时 |
-| （待补）`/agent` `/agent-raw` `/chat` | — | 下一步 |
 
 ## 3. 汇总接口
 
-`GET /stats?days=7`（days 限制 1–90）返回：
+`GET /stats?days=7`（days 限制 1–90）返回 JSON；可视化页面：`GET /stats-ui`（单文件，无外部依赖）。
+
+JSON 示例：
 
 ```json
 {
@@ -66,13 +70,15 @@ DEEPSEEK_PRICE_OUT=1.10
 $env:OBS_DIR="$env:TEMP\obs-mcp"; .\.venv\Scripts\python.exe tests\mcp_smoke.py
 ```
 
-实测（2026-10-24）：
-- `/rag` 一次：`count=1, tokens 907/83, cost $0.000336, 1002ms`；
+实测（2026-10-24，`tests/obs_smoke.py`）：
+- `/rag` 一次：`907/69 token, $0.000321, 1064ms`；
+- `/agent-raw` 用假客户端：token 累计 `100/20`，事件落盘正确；
+- `/stats-ui` 返回 200；
 - MCP 冒烟产生 5 条 `tool` 事件（list/add/list/delete/search），`search_docs` 因进程内首次加载 embedding 模型耗时约 1.7s。
 
 ## 6. 限制与下一步
 
-- 没有面板：`/stats` 是 JSON，前端可以直接拿去画；下一步做个 `static/stats.html`；
 - 没有告警：失败率/成本突增目前靠人看；
 - 没有轮转清理：按天一个文件，定期手动清 `logs/`；
-- `/agent`、`/agent-raw`、`/chat` 还没打点（同样模式加即可）。
+- `/chat` 是流式接口，未开启 `stream_options.include_usage`，因此 token 记 0（只有耗时）；
+- 面板是手刷新的，没有自动轮询曲线。

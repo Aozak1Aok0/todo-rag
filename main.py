@@ -105,19 +105,29 @@ def get_client():
 @app.post("/chat")
 async def chat(req: ChatRequest):
     client = get_client()  # 没 key 会在这里返回 500
+    t0 = time.time()
 
     async def event_gen():
-        stream = await client.chat.completions.create(
-            model="deepseek-chat",
-            messages=req.messages,
-            stream=True,
-        )
-        async for chunk in stream:
-            delta = chunk.choices[0].delta
-            if delta.content:
-                # 每条 SSE 事件用 JSON 包一层，前端好解析
-                yield f"data: {json.dumps({'content': delta.content}, ensure_ascii=False)}\n\n"
-        yield f"data: {json.dumps({'done': True})}\n\n"
+        try:
+            stream = await client.chat.completions.create(
+                model="deepseek-chat",
+                messages=req.messages,
+                stream=True,
+            )
+            async for chunk in stream:
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    # 每条 SSE 事件用 JSON 包一层，前端好解析
+                    yield f"data: {json.dumps({'content': delta.content}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'done': True})}\n\n"
+            obs.log_event("chat", "POST /chat", ok=True,
+                          latency_ms=int((time.time() - t0) * 1000),
+                          messages=len(req.messages))
+        except Exception as e:  # noqa: BLE001
+            obs.log_event("chat", "POST /chat", ok=False, error=type(e).__name__,
+                          latency_ms=int((time.time() - t0) * 1000),
+                          messages=len(req.messages))
+            raise
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")
 
@@ -139,33 +149,50 @@ tools = [
 @app.post("/agent")
 async def agent(req: ChatRequest):
     client = get_client()
-    messages = list(req.messages)
-    resp = await client.chat.completions.create(
-        model="deepseek-chat",
-        messages=messages,
-        tools=tools,
-        tool_choice="auto",
-    )
-    msg = resp.choices[0].message
-    # 模型决定调用工具
-    if msg.tool_calls:
-        for tc in msg.tool_calls:
-            if tc.function.name == "query_todos":
-                result = {"todos": list_todos()}
-                messages.append(msg)  # 必须把"带 tool_call 的助手消息"回传给模型
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": json.dumps(result, ensure_ascii=False),
-                    }
-                )
-        # 第二轮：模型根据工具结果生成最终回答
-        resp2 = await client.chat.completions.create(
-            model="deepseek-chat", messages=messages
+    t0 = time.time()
+    tin = tout = 0
+    used_tool = False
+    try:
+        messages = list(req.messages)
+        resp = await client.chat.completions.create(
+            model="deepseek-chat",
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
         )
-        return {"reply": resp2.choices[0].message.content, "used_tool": True}
-    return {"reply": msg.content, "used_tool": False}
+        tin += resp.usage.prompt_tokens if resp.usage else 0
+        tout += resp.usage.completion_tokens if resp.usage else 0
+        msg = resp.choices[0].message
+        if msg.tool_calls:
+            used_tool = True
+            for tc in msg.tool_calls:
+                if tc.function.name == "query_todos":
+                    result = {"todos": list_todos()}
+                    messages.append(msg)  # 必须把"带 tool_call 的助手消息"回传给模型
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": json.dumps(result, ensure_ascii=False),
+                        }
+                    )
+            resp2 = await client.chat.completions.create(
+                model="deepseek-chat", messages=messages
+            )
+            tin += resp2.usage.prompt_tokens if resp2.usage else 0
+            tout += resp2.usage.completion_tokens if resp2.usage else 0
+            reply = resp2.choices[0].message.content
+        else:
+            reply = msg.content
+    except Exception as e:  # noqa: BLE001
+        obs.log_event("agent", "POST /agent", ok=False, error=type(e).__name__,
+                      latency_ms=int((time.time() - t0) * 1000), used_tool=used_tool)
+        raise
+
+    obs.log_event("agent", "POST /agent", ok=True,
+                  latency_ms=int((time.time() - t0) * 1000),
+                  tokens_in=tin, tokens_out=tout, used_tool=used_tool)
+    return {"reply": reply, "used_tool": used_tool}
 
 
 # ---------- 7. 手写 ReAct（不依赖 SDK 的 tools 封装） ----------
@@ -217,7 +244,7 @@ def _parse_react(text: str):
     return "none", None
 
 
-async def _run_react(client, question: str, max_steps: int = 5):
+async def _run_react(client, question: str, max_steps: int = 5, usage: dict | None = None):
     messages = [
         {"role": "system", "content": REACT_SYSTEM_PROMPT},
         {"role": "user", "content": question},
@@ -227,6 +254,9 @@ async def _run_react(client, question: str, max_steps: int = 5):
     used_tool = False
     for step in range(max_steps):
         resp = await client.chat.completions.create(model="deepseek-chat", messages=messages)
+        if usage is not None and getattr(resp, "usage", None):
+            usage["in"] = usage.get("in", 0) + (resp.usage.prompt_tokens or 0)
+            usage["out"] = usage.get("out", 0) + (resp.usage.completion_tokens or 0)
         text = resp.choices[0].message.content or ""
         messages.append({"role": "assistant", "content": text})
 
@@ -270,7 +300,20 @@ async def agent_raw(req: ChatRequest):
             break
     if not question:
         raise HTTPException(status_code=400, detail="messages 里没有 user 消息")
-    answer, used_tool, trace = await _run_react(client, question)
+
+    t0 = time.time()
+    usage = {"in": 0, "out": 0}
+    try:
+        answer, used_tool, trace = await _run_react(client, question, usage=usage)
+    except Exception as e:  # noqa: BLE001
+        obs.log_event("agent", "POST /agent-raw", ok=False, error=type(e).__name__,
+                      latency_ms=int((time.time() - t0) * 1000))
+        raise
+
+    obs.log_event("agent", "POST /agent-raw", ok=True,
+                  latency_ms=int((time.time() - t0) * 1000),
+                  tokens_in=usage["in"], tokens_out=usage["out"],
+                  used_tool=used_tool, steps=len(trace))
     return {"answer": answer, "used_tool": used_tool, "steps": len(trace), "trace": trace}
 
 # ---------- 8. RAG 接口（检索本地语料后回答） ----------
@@ -347,6 +390,12 @@ async def rag(req: RagRequest):
 
 
 # ---------- 9. 可观测汇总 ----------
+@app.get("/stats-ui", include_in_schema=False)
+async def stats_ui():
+    """可观测面板（单文件，无 CDN 依赖）。"""
+    return FileResponse(BASE_DIR / "static" / "stats.html")
+
+
 @app.get("/stats", summary="最近 N 天的调用次数 / 耗时 / token / 成本汇总")
 async def stats(days: int = 7):
     if not 1 <= days <= 90:

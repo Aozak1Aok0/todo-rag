@@ -15,7 +15,7 @@
 | 演示页 | `GET /rag-ui`（单文件，无 CDN 依赖） |
 | 本地文档 | `GET /docs`（Swagger 静态资源自托管，不依赖境外 CDN） |
 | MCP server | `mcp_server.py`（stdio，5 个工具 + 2 个资源） |
-| 可观测 | 事件日志（JSONL）+ `GET /stats` 汇总耗时 / token / 成本 |
+| 可观测 | 事件日志（JSONL）+ `GET /stats` 汇总 + `GET /stats-ui` 面板（次数 / 延迟 / p95 / token / 成本） |
 
 ## 截图
 
