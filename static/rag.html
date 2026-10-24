@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>项目知识库 · RAG 问答</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1d2129; --line:#2a303a;
+    --text:#e6e9ef; --muted:#9aa4b2; --accent:#339cff; --accent2:#7bd88f;
+    --warn:#ffb454; --err:#ff6b6b; --mono:ui-monospace,SFMono-Regular,Consolas,"Cascadia Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:900px;margin:0 auto;padding:36px 20px 64px}
+  header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:22px}
+  h1{font-size:22px;margin:0 0 6px;letter-spacing:.3px}
+  .sub{color:var(--muted);font-size:13px}
+  .badge{flex:none;border:1px solid var(--line);background:var(--panel);color:var(--muted);
+         font:12px/1 var(--mono);padding:8px 10px;border-radius:999px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}
+  textarea{width:100%;min-height:86px;resize:vertical;background:var(--panel2);color:var(--text);
+           border:1px solid var(--line);border-radius:10px;padding:12px 14px;font:inherit;outline:none}
+  textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(51,156,255,.14)}
+  .row{display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap}
+  .hint{color:var(--muted);font-size:12px;margin-right:auto}
+  select{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;
+         padding:8px 10px;font:13px var(--mono);outline:none}
+  button.ask{background:var(--accent);color:#071018;border:0;border-radius:9px;padding:10px 18px;
+             font-weight:700;cursor:pointer}
+  button.ask:disabled{opacity:.55;cursor:progress}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  .chip{background:transparent;border:1px dashed var(--line);color:var(--muted);border-radius:999px;
+        padding:6px 12px;font-size:12.5px;cursor:pointer}
+  .chip:hover{color:var(--text);border-color:var(--accent)}
+  section{margin-top:22px}
+  .meta{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font:12px var(--mono);margin-top:12px}
+  .answer{white-space:pre-wrap;word-break:break-word;font-size:15px}
+  .sources{display:grid;gap:10px;margin-top:12px}
+  .src{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .src-head{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+  .src-name{font:12.5px var(--mono);color:var(--accent2);word-break:break-all}
+  .dist{font:11.5px var(--mono);color:var(--muted);flex:none}
+  .preview{font:12px/1.6 var(--mono);color:var(--muted);margin-top:8px;
+           display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap}
+  .state{color:var(--muted)}
+  .error{border-color:rgba(255,107,107,.45);color:#ffd7d7}
+  .spinner{width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--accent);
+           border-radius:50%;display:inline-block;vertical-align:-3px;margin-right:8px;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  footer{margin-top:34px;color:var(--muted);font-size:12px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>项目知识库 · RAG 问答</h1>
+      <div class="sub">本地语料（15 个文件）→ 向量 + BM25 混合检索 → DeepSeek 回答</div>
+    </div>
+    <div class="badge" id="kbadge">k = 8</div>
+  </header>
+
+  <div class="card">
+    <label for="q" class="sub">问题</label>
+    <textarea id="q" placeholder="比如：这个服务对外暴露了哪些路由？"></textarea>
+    <div class="row">
+      <span class="hint">Ctrl / ⌘ + Enter 发送</span>
+      <label class="sub" for="k">检索块数</label>
+      <select id="k">
+        <option>3</option><option>5</option><option selected>8</option><option>10</option>
+      </select>
+      <button class="ask" id="ask">问一问</button>
+    </div>
+    <div class="chips" id="chips">
+      <button class="chip">这个服务对外暴露了哪些路由？</button>
+      <button class="chip">Swagger 白屏是怎么解决的？</button>
+      <button class="chip">Express 和 FastAPI 版的数据层有什么不同？</button>
+      <button class="chip">todos 表里有没有 created_at 字段？</button>
+    </div>
+  </div>
+
+  <section id="out" aria-live="polite"></section>
+  <footer>回答只依据检索到的片段；资料里没有的，应当明确说「资料中没有」。</footer>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const out = $('#out');
+const btn = $('#ask');
+const qEl = $('#q');
+const kEl = $('#k');
+
+$('#kbadge').textContent = 'k = ' + kEl.value;
+kEl.addEventListener('change', () => { $('#kbadge').textContent = 'k = ' + kEl.value; });
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;   // 只用 textContent，防注入
+  return n;
+}
+
+function showLoading() {
+  out.replaceChildren();
+  const card = el('div', 'card');
+  card.append(el('span', 'spinner'), el('span', 'state', '检索 + 生成中…'));
+  out.append(card);
+}
+
+function showError(msg) {
+  out.replaceChildren();
+  const card = el('div', 'card error');
+  card.append(el('div', '', '请求失败'), el('div', 'meta', msg));
+  out.append(card);
+}
+
+function render(data, elapsedMs) {
+  out.replaceChildren();
+
+  const ans = el('div', 'card');
+  ans.append(el('div', 'answer', data.answer || '（空回答）'));
+
+  const meta = el('div', 'meta');
+  meta.append(
+    el('span', '', '用时 ' + (elapsedMs / 1000).toFixed(1) + ' s'),
+    el('span', '', '输入 ' + (data.usage?.in ?? 0) + ' / 输出 ' + (data.usage?.out ?? 0) + ' tokens'),
+    el('span', '', '引用 ' + (data.sources?.length || 0) + ' 条 · k=' + data.k)
+  );
+  ans.append(meta);
+  out.append(ans);
+
+  if (data.sources?.length) {
+    const sec = el('section');
+    sec.append(el('div', 'sub', '引用片段'));
+    const list = el('div', 'sources');
+    data.sources.forEach((s) => {
+      const card = el('div', 'src');
+      const head = el('div', 'src-head');
+      head.append(
+        el('span', 'src-name', s.source),
+        el('span', 'dist', 'L' + s.start_line + '–' + s.end_line + ' · 距离 ' + s.distance)
+      );
+      card.append(head);
+      if (s.preview) card.append(el('div', 'preview', s.preview));
+      list.append(card);
+    });
+    sec.append(list);
+    out.append(sec);
+  }
+}
+
+async function ask() {
+  const question = qEl.value.trim();
+  if (!question) { qEl.focus(); return; }
+
+  btn.disabled = true;
+  showLoading();
+  const t0 = performance.now();
+  try {
+    const resp = await fetch('/rag', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, k: Number(kEl.value) }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.detail || ('HTTP ' + resp.status));
+    render(data, performance.now() - t0);
+  } catch (e) {
+    showError(e.message || String(e));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+btn.addEventListener('click', ask);
+qEl.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') ask();
+});
+document.querySelectorAll('.chip').forEach((c) => {
+  c.addEventListener('click', () => { qEl.value = c.textContent; ask(); });
+});
+</script>
+</body>
+</html>

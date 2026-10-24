@@ -1,0 +1,28 @@
+{
+  "commit": "218e53a",
+  "branch": "pa",
+  "time": "2026-10-16T22:35:39",
+  "model": "deepseek-chat",
+  "temperature": 0.0,
+  "max_tokens": 1024,
+  "conditions": [
+    "noctx",
+    "fullctx"
+  ],
+  "questions": [
+    "Q1",
+    "Q2",
+    "Q3",
+    "Q4",
+    "Q5",
+    "Q6",
+    "Q7",
+    "Q8",
+    "Q9",
+    "Q10"
+  ],
+  "corpus_chars": 21834,
+  "corpus_manifest": "D:\\Experienment.py\\basic\\pra\\python\\fastapi-api\\evals\\corpus.txt",
+  "rows": 20,
+  "elapsed_s": 31.7
+}

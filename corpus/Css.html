@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Css</title>
+    <style>
+        *{
+            font-family:sans-serif; /*全局字体*/
+            text-align:center; /*全局居中*/
+        }
+        h1{
+            color:rgb(170, 170, 184); /*字体颜色*/
+            font-size:50px; /*字体大小*/
+            text-decoration: underline; /*字体装饰*/
+        }
+        .header{
+            width: 1080px;
+            height: 30px;
+            background-color: rgb(170, 170, 184); /*背景颜色*/
+            margin: 0 auto;
+            padding: 14px 50px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        body{
+            background-color: white; /*背景颜色*/
+        }
+        .b{
+            width: 500px;
+            height: 100px;
+            border-radius: 50px; /*圆角*/
+            background-color: rgb(136, 72, 72); /*背景颜色*/
+            margin: 50px auto;
+            padding: 20px;
+            box-sizing: border-box;
+            background: linear-gradient(to right, rgb(136, 72, 72), rgb(170, 170, 184)); /*渐变背景*/
+            box-shadow: 5px 5px 10px rgba(0, 0, 0, 0.3); /*阴影*/
+        }
+        .c{
+            width: 100px;
+            height: 50px;
+            background-color: rgb(170, 170, 184); /*背景颜色*/
+            margin: 0px auto;
+            padding: 0px 5px 0;
+            box-sizing: border-box;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+       <p> Welcome to my website!</p>
+    </div>
+    <div class="b">
+        <div class="c">
+             hello!
+        </div>
+    </div>
+    <h1>css</h1>
+</body>
+</html>

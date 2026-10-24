@@ -1,0 +1,65 @@
+\n空行\t空格       int()转换为数值数据                 str()转换为字符串                                              def  makepizza(*toppings):    *使toppings变为可容纳无数元素的空元组                                                                                                 
+删                                                                                                                                                         而**可使其变为空字典
+del数字     不再用了              
+pop最后或数字     还用                                                                   
+加
+insert(0,'asd')
+append
+
+复制
+用ss =  dd[:]   而不是ss = dd
+元组
+ww = (1,3) 不能修改其中的值，但能直接重新定义元组本身
+字典中用.get('sad','asd')可以访问不一定有的值，而弹出后部分
+遍历     .items()    .keys()    .values()
+prompt = "\nTell me something, and I will repeat it back to you:"
+prompt += "\nEnter 'quit' to end the program."
+while True:
+    message = input(prompt)
+    if message == 'quit':
+        break
+    else:
+        print(message)
+
+
+number = 0
+while number < 10:
+      number += 1
+      if number % 2 == 0
+            continue
+      
+       print(number)
+1
+3
+5
+7
+9
+
+import    文件名   ---   导入全部函数          文件.函数（）特殊----
+from   文件名    import    函数名，，，，   ---   导入特定函数     函数（）
+from 文件  import  *（全部函数）    函数（）
+可用as给文件或函数命名如：import    -----   as ---           from   ----     import   -----    as   ----
+
+class Dog:
+    def __init__(self,name,age):
+        self.name = name
+        self.age = age
+    def sit(self):
+        print(f"{self.name} is now sitting.")
+    def roll_over(self):
+        print(f"{self.name} rolled over!")
+dog = Dog('wang',18)
+dog.sit()
+
+strip() 删空格rstrip()删空行
+
+open('文件','r')只读
+                 'w'写入     返回前会清空文件
+                 'a'附加
+                 'r+'读写
+
+split()可以将字符串变为有数个单词元素的列表
+
+pass 什么都不做的指令
+
+文件.json      json.dump(   ,     )存储     json.load()提取到内存

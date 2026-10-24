@@ -1,0 +1,29 @@
+# baseline / RAG 语料清单
+# 路径相对于 pra/ 根目录；# 开头的是注释；空行忽略。
+# 依据 evals/rag-eval-10.md 第 1 节的表格整理（仓库根 README.md 已不存在，未列）。
+# 想增删语料，直接改这个文件即可 —— run_baseline.py 和之后的 RAG 都用它。
+
+# 主代码（被考察的主体）
+python/fastapi-api/main.py
+python/fastapi-api/requirements.txt
+
+# 对照代码（Express 版，真用了 node:sqlite）
+react/todo-api/server.js
+react/todo-api/package.json
+
+# 其它代码样例
+Express/hellonode.js
+Express/new/myapp/index.js
+
+# 笔记（Q8 的考点在 note/JS.txt）
+note/JS.txt
+python/prac/points.essential.txt
+python/prac/Myworld.py
+
+# 页面/数据（干扰项）
+Css.html
+0925/superheroes.json
+content/verse1.txt
+content/verse2.txt
+content/verse3.txt
+content/verse4.txt

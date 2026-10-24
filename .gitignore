@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 本地数据（运行时生成）
+todos.db
+todos.db-wal
+todos.db-shm
+logs/
+.env
+
+# 大文件 / 生成物
+chroma_db/
+models/*
+!models/README.md
