@@ -122,7 +122,13 @@ def main():
 
     key = os.getenv("DEEPSEEK_API_KEY")
     if not key:
-        print("[x] 未设置 DEEPSEEK_API_KEY 环境变量，先 set / $env: 再跑。")
+        try:
+            from credentials import get_deepseek_key
+            key = get_deepseek_key()
+        except Exception:  # noqa: BLE001
+            key = None
+    if not key:
+        print("[x] 未找到 DeepSeek key：设置 DEEPSEEK_API_KEY，或创建 Windows 凭据 WorkBuddy/DeepSeek。")
         sys.exit(1)
     client = OpenAI(api_key=key, base_url=BASE_URL)
 

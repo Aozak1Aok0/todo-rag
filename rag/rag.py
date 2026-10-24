@@ -323,6 +323,7 @@ def _all_chunks():
 
 
 LIST_Q = re.compile(r"哪些|全部|所有|清单|列表|都有|概览|列举")
+ROUTE_MARK = re.compile(r"L\d+: (GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\b")
 
 
 def retrieve(question: str, k: int = DEFAULT_K, mode: str = "hybrid"):
@@ -371,13 +372,20 @@ def retrieve(question: str, k: int = DEFAULT_K, mode: str = "hybrid"):
     if priority:
         ranked = priority + [c for c in ranked if c not in priority]
 
-    # 规则 2：列表类问题 → 附带最相关文件的结构概览
+    # 规则 2：列表类问题 → 附带「含路由」的结构概览（不一定是 top-1 文件）
     if LIST_Q.search(question) and ranked:
-        top_src = next((metas[pos[cid]]["source"] for cid in ranked if cid in pos), None)
-        oid = f"{top_src}#outline"
-        if top_src and oid in pos and oid not in ranked[:k]:
-            ranked = [c for c in ranked if c != oid]
-            ranked.insert(min(k - 1, len(ranked)), oid)
+        chosen = None
+        for cid in ranked:
+            if cid not in pos:
+                continue
+            src = metas[pos[cid]]["source"]
+            oid = f"{src}#outline"
+            if oid in pos and ROUTE_MARK.search(docs[pos[oid]]):  # 该文件确实有路由
+                chosen = oid
+                break
+        if chosen and chosen not in ranked[:k]:
+            ranked = [c for c in ranked if c != chosen]
+            ranked.insert(min(k - 1, len(ranked)), chosen)
 
     out = []
     by_id = {h["id"]: h for h in dense}

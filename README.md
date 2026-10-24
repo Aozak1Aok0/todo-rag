@@ -16,12 +16,13 @@
 | 本地文档 | `GET /docs`（Swagger 静态资源自托管，不依赖境外 CDN） |
 | MCP server | `mcp_server.py`（stdio，5 个工具 + 2 个资源） |
 | 可观测 | 事件日志（JSONL）+ `GET /stats` 汇总 + `GET /stats-ui` 面板（次数 / 延迟 / p95 / token / 成本） |
+| 答案校验 | `POST /rag-verify`：独立校验 Agent 标注未被资料支持的断言（默认只报告，不自动改写） |
 
 ## 截图
 
-**RAG 演示页**：提问 → 答案 → 引用片段（文件 + 行号 + 距离）
+**React 前端**（`web/`）：提问 → 答案 → 引用片段（文件 + 行号 + 距离）+ 本地历史
 
-![RAG 演示页](docs/screenshots/rag-ui.png)
+![React 前端](docs/screenshots/react-ui.png)
 
 **Swagger 文档**：`/docs` 自托管静态资源
 
@@ -148,7 +149,7 @@ rag/                 切块、索引、混合检索、提示词
 evals/               10 题评测集、baseline 与 RAG 结果、分析报告
 corpus/              评测语料快照（15 个文件，供检索索引使用）
 tests/               冒烟测试（接口 / 持久化 / MCP / 观测）
-docs/                设计与迁移说明、截图
+docs/                设计与迁移说明（含 docs/dual-agent.md）、截图
 static/              rag.html + Swagger 静态资源
 web/                 React 前端（Vite，开发时 npm run dev）
 models/              本地 embedding 模型（不入库）

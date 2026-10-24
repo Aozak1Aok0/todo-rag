@@ -71,6 +71,12 @@ class RagRequest(BaseModel):
     k: int | None = None
 
 
+class RagVerifyRequest(BaseModel):
+    question: str
+    k: int | None = None
+    max_revisions: int = 0  # 默认只报告校验结果，不自动重写（见 docs/dual-agent.md）
+
+
 # ---------- 4. 待办接口 ----------
 @app.get("/api/todos")
 async def get_todos():
@@ -408,6 +414,49 @@ async def rag(req: RagRequest):
             "in": usage.prompt_tokens if usage else 0,
             "out": usage.completion_tokens if usage else 0,
         },
+    }
+
+
+# ---------- 9. 双 Agent：回答 + 独立校验 ----------
+@app.post("/rag-verify", summary="双 Agent：检索回答 + 独立校验（必要时重写）")
+async def rag_verify(req: RagVerifyRequest):
+    question = req.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="question 不能为空")
+
+    k = RAG_K if req.k is None else req.k
+    if not 1 <= k <= 10:
+        raise HTTPException(status_code=400, detail="k 必须在 1..10 之间")
+    if not 0 <= req.max_revisions <= 2:
+        raise HTTPException(status_code=400, detail="max_revisions 必须在 0..2 之间")
+
+    client = get_client()
+    t0 = time.time()
+    try:
+        from rag import pipeline
+
+        result = await pipeline.answer_verified(client, question, k, req.max_revisions)
+    except Exception as e:  # noqa: BLE001
+        obs.log_event("rag_verify", "POST /rag-verify", ok=False, error=type(e).__name__,
+                      latency_ms=int((time.time() - t0) * 1000), k=k)
+        raise HTTPException(status_code=502, detail=f"校验流水线失败：{type(e).__name__}")
+
+    v = result["verification"]
+    obs.log_event(
+        "rag_verify", "POST /rag-verify", ok=True,
+        latency_ms=int((time.time() - t0) * 1000),
+        tokens_in=result["usage"]["in"], tokens_out=result["usage"]["out"],
+        k=k, rounds=result["rounds"],
+        verdict=v.get("verdict"),
+        unsupported=len(v.get("unsupported") or []),
+    )
+    return {
+        "answer": result["answer"],
+        "k": k,
+        "rounds": result["rounds"],
+        "verification": v,
+        "sources": pipeline.format_sources(result["hits"]),
+        "usage": result["usage"],
     }
 
 

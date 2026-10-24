@@ -5,6 +5,7 @@
 
 # 主代码（被考察的主体）
 python/fastapi-api/main.py
+python/fastapi-api/store.py
 python/fastapi-api/requirements.txt
 
 # 对照代码（Express 版，真用了 node:sqlite）

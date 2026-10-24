@@ -1,4 +1,4 @@
-# P2→P3：FastAPI 版 todo-api + 调大模型（DeepSeek，OpenAI 兼容）
+# FastAPI 版 todo-api + 大模型接入（DeepSeek，OpenAI 兼容）
 
 from pathlib import Path
 
@@ -28,6 +28,11 @@ BASE_DIR = Path(__file__).resolve().parent  # 获取当前文件所在目录
 RAG_K = int(os.getenv("RAG_K", "8"))  # /rag 默认检索块数
 # 将static目录挂载到/static路径，用于存放静态文件
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+
+# 前端（React）构建产物存在时挂到 /app；开发时用 `npm run dev`（Vite 代理到 :8000）
+WEB_DIST = BASE_DIR / "web" / "dist"
+if WEB_DIST.is_dir():
+    app.mount("/app", StaticFiles(directory=WEB_DIST, html=True), name="app")
 
 
 @app.get("/docs", include_in_schema=False)
@@ -66,7 +71,13 @@ class RagRequest(BaseModel):
     k: int | None = None
 
 
-# ---------- 4. 普通待办接口（P2） ----------
+class RagVerifyRequest(BaseModel):
+    question: str
+    k: int | None = None
+    max_revisions: int = 1
+
+
+# ---------- 4. 待办接口 ----------
 @app.get("/api/todos")
 async def get_todos():
     return list_todos()
@@ -92,37 +103,64 @@ async def root():
     return {"msg": "Todo + LLM API 运行中", "ui": "/rag-ui", "docs": "/docs", "stats": "/stats"}
 
 
+def _api_key() -> str | None:
+    """环境变量优先；Windows 上回退到凭据管理器，免去每次开终端设 key。"""
+    key = os.getenv("DEEPSEEK_API_KEY")
+    if key:
+        return key
+    try:
+        from credentials import get_deepseek_key
+
+        return get_deepseek_key()
+    except Exception:  # noqa: BLE001 —— 非 Windows 或凭据不存在
+        return None
+
+
 def get_client():
-    # 没设置 key 时友好报错，而不是崩在调用处
-    api_key = os.getenv("DEEPSEEK_API_KEY")
+    # 没 key 时友好报错，而不是崩在调用处
+    api_key = _api_key()
     if not api_key:
-        raise HTTPException(status_code=500, detail="未设置 DEEPSEEK_API_KEY 环境变量")
+        raise HTTPException(
+            status_code=500,
+            detail="未找到 DeepSeek API key：设置环境变量 DEEPSEEK_API_KEY，"
+                   "或在 Windows 凭据管理器创建通用凭据 WorkBuddy/DeepSeek",
+        )
     return AsyncOpenAI(api_key=api_key, base_url="https://api.deepseek.com")
 
 
-# ---------- 5. P3-①② 多轮 + 流式 /chat（SSE） ----------
+# ---------- 5. 多轮 + 流式 /chat（SSE） ----------
 # 和之前单轮版的区别：前端传完整 messages 历史（多轮）；用 StreamingResponse 把字一个个吐出来（流式）
 @app.post("/chat")
 async def chat(req: ChatRequest):
     client = get_client()  # 没 key 会在这里返回 500
+    t0 = time.time()
 
     async def event_gen():
-        stream = await client.chat.completions.create(
-            model="deepseek-chat",
-            messages=req.messages,
-            stream=True,
-        )
-        async for chunk in stream:
-            delta = chunk.choices[0].delta
-            if delta.content:
-                # 每条 SSE 事件用 JSON 包一层，前端好解析
-                yield f"data: {json.dumps({'content': delta.content}, ensure_ascii=False)}\n\n"
-        yield f"data: {json.dumps({'done': True})}\n\n"
+        try:
+            stream = await client.chat.completions.create(
+                model="deepseek-chat",
+                messages=req.messages,
+                stream=True,
+            )
+            async for chunk in stream:
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    # 每条 SSE 事件用 JSON 包一层，前端好解析
+                    yield f"data: {json.dumps({'content': delta.content}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'done': True})}\n\n"
+            obs.log_event("chat", "POST /chat", ok=True,
+                          latency_ms=int((time.time() - t0) * 1000),
+                          messages=len(req.messages))
+        except Exception as e:  # noqa: BLE001
+            obs.log_event("chat", "POST /chat", ok=False, error=type(e).__name__,
+                          latency_ms=int((time.time() - t0) * 1000),
+                          messages=len(req.messages))
+            raise
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")
 
 
-# ---------- 6. P3-③ Function Calling（Agent 核心） ----------
+# ---------- 6. Function Calling（Agent 核心） ----------
 # 给模型一个工具：查询当前系统的待办列表。模型会自己决定要不要调它 —— 这就是 Agent 的"自主决策"
 tools = [
     {
@@ -139,36 +177,53 @@ tools = [
 @app.post("/agent")
 async def agent(req: ChatRequest):
     client = get_client()
-    messages = list(req.messages)
-    resp = await client.chat.completions.create(
-        model="deepseek-chat",
-        messages=messages,
-        tools=tools,
-        tool_choice="auto",
-    )
-    msg = resp.choices[0].message
-    # 模型决定调用工具
-    if msg.tool_calls:
-        for tc in msg.tool_calls:
-            if tc.function.name == "query_todos":
-                result = {"todos": list_todos()}
-                messages.append(msg)  # 必须把"带 tool_call 的助手消息"回传给模型
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": json.dumps(result, ensure_ascii=False),
-                    }
-                )
-        # 第二轮：模型根据工具结果生成最终回答
-        resp2 = await client.chat.completions.create(
-            model="deepseek-chat", messages=messages
+    t0 = time.time()
+    tin = tout = 0
+    used_tool = False
+    try:
+        messages = list(req.messages)
+        resp = await client.chat.completions.create(
+            model="deepseek-chat",
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
         )
-        return {"reply": resp2.choices[0].message.content, "used_tool": True}
-    return {"reply": msg.content, "used_tool": False}
+        tin += resp.usage.prompt_tokens if resp.usage else 0
+        tout += resp.usage.completion_tokens if resp.usage else 0
+        msg = resp.choices[0].message
+        if msg.tool_calls:
+            used_tool = True
+            for tc in msg.tool_calls:
+                if tc.function.name == "query_todos":
+                    result = {"todos": list_todos()}
+                    messages.append(msg)  # 必须把"带 tool_call 的助手消息"回传给模型
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": json.dumps(result, ensure_ascii=False),
+                        }
+                    )
+            resp2 = await client.chat.completions.create(
+                model="deepseek-chat", messages=messages
+            )
+            tin += resp2.usage.prompt_tokens if resp2.usage else 0
+            tout += resp2.usage.completion_tokens if resp2.usage else 0
+            reply = resp2.choices[0].message.content
+        else:
+            reply = msg.content
+    except Exception as e:  # noqa: BLE001
+        obs.log_event("agent", "POST /agent", ok=False, error=type(e).__name__,
+                      latency_ms=int((time.time() - t0) * 1000), used_tool=used_tool)
+        raise
+
+    obs.log_event("agent", "POST /agent", ok=True,
+                  latency_ms=int((time.time() - t0) * 1000),
+                  tokens_in=tin, tokens_out=tout, used_tool=used_tool)
+    return {"reply": reply, "used_tool": used_tool}
 
 
-# ---------- 7. P3.5 手写 ReAct（不依赖 SDK 的 tools 封装） ----------
+# ---------- 7. 手写 ReAct（不依赖 SDK 的 tools 封装） ----------
 # 对比 /agent：SDK 版把"调不调工具"交给 tool_choice="auto" 让模型自己决定；
 # 这里反过来——我们手写 Reason→Act→Observe 循环：
 #   1) 用 system 提示词规定模型输出固定格式（Thought / Action / Action Input / Observation / Final Answer）
@@ -217,7 +272,7 @@ def _parse_react(text: str):
     return "none", None
 
 
-async def _run_react(client, question: str, max_steps: int = 5):
+async def _run_react(client, question: str, max_steps: int = 5, usage: dict | None = None):
     messages = [
         {"role": "system", "content": REACT_SYSTEM_PROMPT},
         {"role": "user", "content": question},
@@ -227,6 +282,9 @@ async def _run_react(client, question: str, max_steps: int = 5):
     used_tool = False
     for step in range(max_steps):
         resp = await client.chat.completions.create(model="deepseek-chat", messages=messages)
+        if usage is not None and getattr(resp, "usage", None):
+            usage["in"] = usage.get("in", 0) + (resp.usage.prompt_tokens or 0)
+            usage["out"] = usage.get("out", 0) + (resp.usage.completion_tokens or 0)
         text = resp.choices[0].message.content or ""
         messages.append({"role": "assistant", "content": text})
 
@@ -270,10 +328,23 @@ async def agent_raw(req: ChatRequest):
             break
     if not question:
         raise HTTPException(status_code=400, detail="messages 里没有 user 消息")
-    answer, used_tool, trace = await _run_react(client, question)
+
+    t0 = time.time()
+    usage = {"in": 0, "out": 0}
+    try:
+        answer, used_tool, trace = await _run_react(client, question, usage=usage)
+    except Exception as e:  # noqa: BLE001
+        obs.log_event("agent", "POST /agent-raw", ok=False, error=type(e).__name__,
+                      latency_ms=int((time.time() - t0) * 1000))
+        raise
+
+    obs.log_event("agent", "POST /agent-raw", ok=True,
+                  latency_ms=int((time.time() - t0) * 1000),
+                  tokens_in=usage["in"], tokens_out=usage["out"],
+                  used_tool=used_tool, steps=len(trace))
     return {"answer": answer, "used_tool": used_tool, "steps": len(trace), "trace": trace}
 
-# ---------- 7. P4：RAG 接口（检索本地语料后回答） ----------
+# ---------- 8. RAG 接口（检索本地语料后回答） ----------
 @app.get("/rag-ui", include_in_schema=False)
 async def rag_ui():
     """极简演示页（单文件，无 CDN 依赖）。"""
@@ -346,7 +417,56 @@ async def rag(req: RagRequest):
     }
 
 
-# ---------- 8. P6：可观测汇总 ----------
+# ---------- 9. 双 Agent：回答 + 独立校验 ----------
+@app.post("/rag-verify", summary="双 Agent：检索回答 + 独立校验（必要时重写）")
+async def rag_verify(req: RagVerifyRequest):
+    question = req.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="question 不能为空")
+
+    k = RAG_K if req.k is None else req.k
+    if not 1 <= k <= 10:
+        raise HTTPException(status_code=400, detail="k 必须在 1..10 之间")
+    if not 0 <= req.max_revisions <= 2:
+        raise HTTPException(status_code=400, detail="max_revisions 必须在 0..2 之间")
+
+    client = get_client()
+    t0 = time.time()
+    try:
+        from rag import pipeline
+
+        result = await pipeline.answer_verified(client, question, k, req.max_revisions)
+    except Exception as e:  # noqa: BLE001
+        obs.log_event("rag_verify", "POST /rag-verify", ok=False, error=type(e).__name__,
+                      latency_ms=int((time.time() - t0) * 1000), k=k)
+        raise HTTPException(status_code=502, detail=f"校验流水线失败：{type(e).__name__}")
+
+    v = result["verification"]
+    obs.log_event(
+        "rag_verify", "POST /rag-verify", ok=True,
+        latency_ms=int((time.time() - t0) * 1000),
+        tokens_in=result["usage"]["in"], tokens_out=result["usage"]["out"],
+        k=k, rounds=result["rounds"],
+        verdict=v.get("verdict"),
+        unsupported=len(v.get("unsupported") or []),
+    )
+    return {
+        "answer": result["answer"],
+        "k": k,
+        "rounds": result["rounds"],
+        "verification": v,
+        "sources": pipeline.format_sources(result["hits"]),
+        "usage": result["usage"],
+    }
+
+
+# ---------- 9. 可观测汇总 ----------
+@app.get("/stats-ui", include_in_schema=False)
+async def stats_ui():
+    """可观测面板（单文件，无 CDN 依赖）。"""
+    return FileResponse(BASE_DIR / "static" / "stats.html")
+
+
 @app.get("/stats", summary="最近 N 天的调用次数 / 耗时 / token / 成本汇总")
 async def stats(days: int = 7):
     if not 1 <= days <= 90:

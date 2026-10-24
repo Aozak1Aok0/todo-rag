@@ -3,10 +3,10 @@ uvicorn==0.54.0
 httpx==0.28.1
 openai==3.29.0
 
-# P4 RAG (optional; not needed if you never call /rag).
+# RAG (optional; not needed if you never call /rag).
 # Local embedding model lives in models/ (91MB), vector store in chroma_db/.
 chromadb==1.5.9
 fastembed==0.9.0
 
-# P5 MCP server (stdio)
+# MCP server (stdio)
 mcp==2.3.0
