@@ -22,7 +22,7 @@
 
 **React 前端**（`web/`）：提问 → 答案 → 引用片段（文件 + 行号 + 距离）+ 本地历史
 
-![React 前端](docs/screenshots/react-ui.png)
+![React 前端（含校验条）](docs/screenshots/react-ui-verify-2.png)
 
 **Swagger 文档**：`/docs` 自托管静态资源
 
