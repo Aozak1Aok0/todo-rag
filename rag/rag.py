@@ -225,9 +225,22 @@ def code_blocks(text: str, suffix: str):
                 continue  # 装饰器和函数算一块
         bounds.append(i)
 
+    # 把紧邻符号上方的注释行并进该块（否则「# 种子数据…」会被留在上一块里）
+    starts = list(bounds)
+    for k in range(1, len(starts)):
+        j = starts[k] - 1
+        while j > starts[k - 1] and lines[j].strip().startswith("#"):
+            j -= 1
+        starts[k] = j + 1
+    if starts:
+        j = starts[0] - 1
+        while j >= 0 and lines[j].strip().startswith("#"):
+            j -= 1
+        starts[0] = j + 1
+
     out = []
-    for k, start in enumerate(bounds):
-        end = bounds[k + 1] if k + 1 < len(bounds) else len(lines)
+    for k, start in enumerate(starts):
+        end = starts[k + 1] if k + 1 < len(starts) else len(lines)
         body = "\n".join(lines[start:end]).strip()
         if body:
             out.append((start + 1, end, _block_header(lines[start]), body))

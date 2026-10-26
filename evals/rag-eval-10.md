@@ -131,3 +131,7 @@ v0.1 锚定在 `218e53a「1015」`（内存 list 版）—— 那份 baseline（
 | v0.1 | 2026-10-16 | 初始 10 题（锚定 `218e53a`，内存 list 版） |
 | v0.2 | 2026-10-18 | SQLite 迁移后：Q7 改为「两边都用 SQLite，差异在种子数据与接口」；Q9 原题（「没有数据库」）前提失效 → 换成「有没有 created_at/due_date/用户字段、是否支持多用户」；语料版本锚点与建议顺序同步更新。**v0.1 的 baseline 只作历史对照。** |
 
+## 6. v0.3 变更（2026-10-26）
+
+数据层迁到 `store.py` 后，Q3 / Q7 / Q9 的 gold 补上 `pra/python/fastapi-api/store.py`
+（建表语句、SEEDS、init_db 都在这里，main.py 只调用）。题目与判分锚点不变。

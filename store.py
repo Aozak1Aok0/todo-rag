@@ -10,6 +10,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 
+# 建表语句（todos：id / name / completed）
 CREATE_SQL = """
 CREATE TABLE IF NOT EXISTS todos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -18,6 +19,7 @@ CREATE TABLE IF NOT EXISTS todos (
 )
 """
 
+# 种子数据：表为空时插入这些记录（name, completed）
 SEEDS = [("学 Express", 1), ("接前端", 0), ("学 Python + FastAPI", 0)]
 
 

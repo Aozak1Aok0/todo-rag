@@ -34,23 +34,30 @@ def format_sources(hits):
     return out
 
 
-async def answer_once(client, question, k=8, variant=None):
-    hits = await anyio.to_thread.run_sync(retrieve, question, k)
+async def answer_once(client, question, k=8, variant=None, multi_query=False):
+    if multi_query:
+        from rag.multi import retrieve_multi
+
+        hits, plan_usage = await retrieve_multi(client, question, k)
+    else:
+        hits = await anyio.to_thread.run_sync(retrieve, question, k)
+        plan_usage = _usage()
     resp = await client.chat.completions.create(
         model=MODEL,
         messages=build_rag_messages(question, hits, variant),
         temperature=0,
     )
     usage = resp.usage
+    answer_usage = _usage(usage.prompt_tokens if usage else 0, usage.completion_tokens if usage else 0)
     return {
         "answer": resp.choices[0].message.content or "",
         "hits": hits,
-        "usage": _usage(usage.prompt_tokens if usage else 0, usage.completion_tokens if usage else 0),
+        "usage": _add(plan_usage, answer_usage),
     }
 
 
-async def answer_verified(client, question, k=8, max_revisions=1, variant=None):
-    first = await answer_once(client, question, k, variant)
+async def answer_verified(client, question, k=8, max_revisions=1, variant=None, multi_query=False):
+    first = await answer_once(client, question, k, variant, multi_query)
     hits = first["hits"]
     usage = dict(first["usage"])
     answer = first["answer"]

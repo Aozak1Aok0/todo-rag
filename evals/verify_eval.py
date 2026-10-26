@@ -24,7 +24,7 @@ from rag import pipeline  # noqa: E402
 EVAL = APP / "evals" / "rag-eval-10.jsonl"
 
 
-async def run(k: int, limit: int, out: Path, revisions: int = 1):
+async def run(k: int, limit: int, out: Path, revisions: int = 1, multi: bool = False):
     client = AsyncOpenAI(api_key=get_deepseek_key(), base_url="https://api.deepseek.com")
     questions = [json.loads(l) for l in EVAL.read_text(encoding="utf-8").splitlines() if l.strip()]
     if limit:
@@ -33,7 +33,7 @@ async def run(k: int, limit: int, out: Path, revisions: int = 1):
     rows, t_all = [], time.time()
     for q in questions:
         t0 = time.time()
-        res = await pipeline.answer_verified(client, q["question"], k, max_revisions=revisions)
+        res = await pipeline.answer_verified(client, q["question"], k, max_revisions=revisions, multi_query=multi)
         v = res["verification"]
         rows.append({
             "id": q["id"],
@@ -70,7 +70,8 @@ if __name__ == "__main__":
     ap.add_argument("--k", type=int, default=8)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--revisions", type=int, default=1)
+    ap.add_argument("--multi-query", action="store_true")
     ap.add_argument("--out", default="")
     args = ap.parse_args()
     dest = Path(args.out) if args.out else APP / "evals" / f"verify-{datetime.now():%Y%m%d}.jsonl"
-    asyncio.run(run(args.k, args.limit, dest, args.revisions))
+    asyncio.run(run(args.k, args.limit, dest, args.revisions, args.multi_query))

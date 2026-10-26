@@ -21,7 +21,7 @@ function loadHistory() {
 
 export default function App() {
   const [question, setQuestion] = useState('')
-  const [k, setK] = useState(5)
+  const [k, setK] = useState(10)
   const [items, setItems] = useState(loadHistory)
   const [loading, setLoading] = useState(false)
   const inputRef = useRef(null)
@@ -108,7 +108,7 @@ export default function App() {
           <span className="hint">Ctrl / ⌘ + Enter 发送</span>
           <label className="sub" htmlFor="k">检索块数</label>
           <select id="k" value={k} onChange={(e) => setK(Number(e.target.value))}>
-            {[3, 5, 8, 10].map((n) => (
+            {[5, 8, 10, 12].map((n) => (
               <option key={n} value={n}>{n}</option>
             ))}
           </select>
