@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Todo + Agent + RAG · 演示回放</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1d2129; --line:#2a303a;
+    --text:#e6e9ef; --muted:#9aa4b2; --accent:#339cff; --ok:#7bd88f; --warn:#ffb454; --err:#ff6b6b;
+    --mono:ui-monospace,SFMono-Regular,Consolas,"Cascadia Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1100px;margin:0 auto;padding:32px 18px 64px}
+  header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}
+  h1{font-size:22px;margin:0 0 6px}
+  .sub{color:var(--muted);font-size:13px}
+  .links a{color:var(--accent);text-decoration:none;font-size:13px;margin-left:14px}
+  .notice{border:1px solid rgba(255,180,84,.35);background:rgba(255,180,84,.06);color:#ffd9a8;
+          border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:18px}
+  .layout{display:grid;grid-template-columns:320px 1fr;gap:16px}
+  @media (max-width:820px){.layout{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .qlist{display:flex;flex-direction:column;gap:8px}
+  .qbtn{text-align:left;background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+        border-radius:9px;padding:10px 12px;font:13px/1.5 inherit;cursor:pointer}
+  .qbtn:hover{color:var(--text);border-color:var(--accent)}
+  .qbtn.active{border-color:var(--accent);color:var(--text);background:rgba(51,156,255,.08)}
+  .qbtn .qid{font:12px var(--mono);color:var(--accent);margin-right:8px}
+  .q{font-weight:600;padding-bottom:10px;border-bottom:1px solid var(--line);margin-bottom:12px}
+  .a{white-space:pre-wrap;word-break:break-word}
+  .meta{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font:12px var(--mono);margin-top:12px}
+  .verify{margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px}
+  .verify.ok{border-color:rgba(123,216,143,.35);background:rgba(123,216,143,.06)}
+  .verify.warn{border-color:rgba(255,180,84,.35);background:rgba(255,180,84,.06)}
+  .verify-head{color:var(--muted)}
+  .verify.ok .verify-head{color:var(--ok)}
+  .verify.warn .verify-head{color:var(--warn)}
+  .verify details{margin-top:8px}
+  .verify summary{cursor:pointer;color:var(--muted);font-size:12.5px}
+  .verify ul{margin:8px 0 0;padding-left:18px;font-size:12.5px}
+  .sources{display:grid;gap:10px;margin-top:12px}
+  .src{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .src-head{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+  .src-name{font:12.5px var(--mono);color:var(--ok);word-break:break-all}
+  .dist{font:11.5px var(--mono);color:var(--muted);flex:none}
+  .preview{font:12px/1.6 var(--mono);color:var(--muted);margin-top:8px;
+           display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap}
+  .shot{margin-top:22px}
+  .shot img{width:100%;border-radius:12px;border:1px solid var(--line)}
+  footer{margin-top:26px;color:var(--muted);font-size:12px;text-align:center}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Todo + Agent + RAG · 演示回放</h1>
+      <div class="sub">FastAPI · SQLite · DeepSeek · Chroma + BM25 混合检索 · 查询改写 · 独立校验 · MCP</div>
+    </div>
+    <div class="links">
+      <a href="https://github.com/Aozak1Aok0/todo-rag" target="_blank" rel="noreferrer">GitHub</a>
+    </div>
+  </header>
+
+  <div class="notice" id="notice"></div>
+
+  <div class="layout">
+    <section class="card">
+      <div class="sub" style="margin-bottom:10px">10 道评测题</div>
+      <div class="qlist" id="qlist"></div>
+    </section>
+
+    <section class="card" id="detail"></section>
+  </div>
+
+  <div class="shot">
+    <div class="sub" style="margin-bottom:8px">界面（本地运行时的完整交互）</div>
+    <img src="screenshot.png" alt="React 前端截图">
+  </div>
+
+  <footer>
+    回放数据来自 2026-10-26 的真实运行；完整检索/生成/校验链路可在本地复现（见仓库 README）。
+  </footer>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let DATA = null;
+
+function el(tag, cls, text){
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+
+function renderDetail(item){
+  const box = $('#detail');
+  box.replaceChildren();
+  box.append(el('div', 'q', item.question));
+
+  box.append(el('div', 'a', item.answer || ''));
+
+  const meta = el('div', 'meta');
+  meta.append(
+    el('span', '', 'k = ' + DATA.meta.k),
+    el('span', '', 'rounds = ' + (item.rounds || 1)),
+    el('span', '', 'tokens ' + (item.usage?.in ?? 0) + ' / ' + (item.usage?.out ?? 0)),
+    el('span', '', '引用 ' + (item.sources?.length || 0) + ' 条')
+  );
+  box.append(meta);
+
+  const v = item.verification || {};
+  const verify = el('div', 'verify ' + (v.verdict === 'ok' ? 'ok' : 'warn'));
+  verify.append(el('div', 'verify-head',
+    v.verdict === 'ok' ? '校验：通过（断言均可在资料中找到依据）'
+                       : '校验：' + (v.unsupported?.length || 0) + ' 条断言未被资料支持'));
+  if ((v.unsupported?.length || 0) > 0 || v.reason) {
+    const d = el('details');
+    d.append(el('summary', '', '查看校验明细'));
+    if (v.reason) d.append(el('div', 'preview', v.reason));
+    if (v.unsupported?.length) {
+      const ul = el('ul');
+      v.unsupported.forEach((x) => ul.append(el('li', '', x)));
+      d.append(ul);
+    }
+    verify.append(d);
+  }
+  box.append(verify);
+
+  if (item.sources?.length) {
+    box.append(el('div', 'sub', '引用片段'));
+    const list = el('div', 'sources');
+    item.sources.forEach((s) => {
+      const card = el('div', 'src');
+      const head = el('div', 'src-head');
+      head.append(
+        el('span', 'src-name', s.source),
+        el('span', 'dist', 'L' + s.start_line + '–' + s.end_line +
+          (s.distance != null ? ' · 距离 ' + s.distance : ''))
+      );
+      card.append(head);
+      if (s.preview) card.append(el('div', 'preview', s.preview));
+      list.append(card);
+    });
+    box.append(list);
+  }
+}
+
+function select(id){
+  document.querySelectorAll('.qbtn').forEach((b) => b.classList.toggle('active', b.dataset.id === id));
+  const item = DATA.items.find((x) => x.id === id);
+  if (item) renderDetail(item);
+}
+
+async function main(){
+  const resp = await fetch('data.json');
+  DATA = await resp.json();
+  $('#notice').textContent = DATA.meta.note;
+  const list = $('#qlist');
+  DATA.items.forEach((item) => {
+    const b = el('button', 'qbtn');
+    b.dataset.id = item.id;
+    b.append(el('span', 'qid', item.id));
+    b.append(document.createTextNode(item.question));
+    b.addEventListener('click', () => select(item.id));
+    list.append(b);
+  });
+  if (DATA.items.length) select(DATA.items[0].id);
+}
+
+main().catch((e) => { $('#notice').textContent = '加载失败：' + e.message; });
+</script>
+</body>
+</html>
