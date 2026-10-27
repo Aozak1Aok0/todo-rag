@@ -1,68 +1,70 @@
-# 部署：Hugging Face Spaces（Docker，免费）
+# 部署与演示（2026-10-27）
 
-> 本机没有 Docker，**镜像未在本地构建过**；下面的步骤按 HF Spaces 的 Docker SDK 写成，第一次部署时按日志排错。
+## 0. 结论
 
-## 0. 前置
+- 静态演示（真实运行回放）**优先托管在 GitHub Pages**：免费、无需额外账号、更新简单。
+- Hugging Face 的 Static Space 也可以，但需要确认可见性是 Public；Docker / Gradio 在当前账号下收费，不采用。
+- 完整交互（真检索 + 真生成）在本地跑，命令见第 3 节。
 
-1. 先把最新改动 push 到 GitHub（镜像构建时会 `git clone` 公开仓库）：
-   ```powershell
-   cd D:\Experienment.py\todo-rag
-   git push origin main
-   ```
-2. 注册/登录 <https://huggingface.co>（免费）。
+## 1. GitHub Pages（推荐）
 
-## 1. 创建 Space
+静态文件在 `deploy/hf-static/`：`index.html`、`data.json`、`screenshot.png`。
 
-- 打开 <https://huggingface.co/new-space>
-- Name：`todo-rag`
-- License：MIT（可选）
-- **SDK：Docker** → Hardware：**CPU basic · 2 vCPU · 16GB RAM · Free**
-- Visibility：Public
-- 点 **Create Space**
+### 一次性发布
 
-## 2. 配置 key（Secret）
+1. 先把当前改动提交到 `main` 并推送（工作区必须干净）；
+2. 运行发布脚本（会把静态文件推到一个独立的 `gh-pages` 分支）：
 
-Space 页面 → **Settings** → **Variables and secrets** → **New secret**：
+```powershell
+cd D:\Experienment.py\todo-rag
+powershell -NoProfile -ExecutionPolicy Bypass -File deploy\gh-pages\publish.ps1
+```
 
-- Name：`DEEPSEEK_API_KEY`
-- Value：你的 DeepSeek key
+3. 打开仓库 **Settings → Pages**：
+   - Source：**Deploy from a branch**
+   - Branch：**gh-pages** / **/ (root)**
+   - Save
+4. 等 1–2 分钟，访问：
 
-（应用优先读环境变量，读不到才尝试 Windows 凭据管理器 —— 在 Linux 上会直接失败，所以这个 Secret 是必需的。）
+```
+https://aozak1aok0.github.io/todo-rag/
+```
 
-## 3. 上传两个文件
+### 以后更新回放数据
 
-Space 页面 → **Files** → **Add file** → **Upload files**，上传：
+```powershell
+.\.venv\Scripts\python.exe evals\verify_eval.py --revisions 0 --multi-query --k 10 --out evals\verify-multi-k10-20261026.jsonl
+.\.venv\Scripts\python.exe deploy\hf-static\build_data.py
+git add deploy/hf-static/data.json && git commit -m "docs: refresh demo data" && git push
+powershell -NoProfile -ExecutionPolicy Bypass -File deploy\gh-pages\publish.ps1
+```
 
-- `deploy/hf-space/Dockerfile`
-- `deploy/hf-space/README.md`（带 HF frontmatter，**不要**用项目根目录那个 README）
+> 脚本每次会重建 `gh-pages` 分支；远端已存在时加 `-Force` 覆盖（历史每次都会被重写，对生成内容是可接受的）。
 
-> 也可以 `git clone https://huggingface.co/spaces/<你的用户名>/todo-rag` 后把这两个文件拷进去再 push。
+## 2. Hugging Face Static Space（备选）
 
-## 4. 等构建
+文件同上。步骤：
 
-- 页面 **Logs** 会显示：pip 安装 → 下载模型（91MB）→ `rag.py build`（63 块）→ uvicorn 启动
-- 首次构建约 **5–10 分钟**；之后冷启动约 30 秒
+1. <https://huggingface.co/new-space> → Name `todo-rag-demo` → **SDK：Static** → Public；
+2. Files → Upload files：`index.html`、`data.json`、`screenshot.png`、`README.md`（HF 版 frontmatter）；
+3. 等 Running，访问 `https://<用户名>-todo-rag-demo.hf.space`。
 
-## 5. 验收
+排错：直连域名 404 = Space 未 Running / 私有 / 文件在子目录；用无痕窗口确认可见性。
 
-打开：
+## 3. 本地完整交互（面试演示用）
 
-- `https://<用户名>-todo-rag.hf.space/app/` —— React 前端
-- `https://<用户名>-todo-rag.hf.space/docs` —— API 文档
-- `https://<用户名>-todo-rag.hf.space/rag-ui` —— 静态演示页
-- `https://<用户名>-todo-rag.hf.space/stats-ui` —— 用量面板
+```powershell
+cd D:\Experienment.py\todo-rag
+.\.venv\Scripts\python.exe -m uvicorn main:app --port 8000
 
-问一句「这个服务启动时 todos 里有哪些数据？」，能看到答案 + 引用 + 校验条即为成功。
+# 另一个终端
+cd web
+npm run dev        # http://127.0.0.1:5173
+```
 
-## 常见问题
+或构建后直接开 <http://127.0.0.1:8000/app/>。
 
-| 现象 | 处理 |
-|---|---|
-| Build 失败在 `pip install` | 换 `requirements.txt` 里的版本或看 Logs 定位到具体包 |
-| Build 失败在下载模型 | 检查 `huggingface.co` 链接是否可访问；可改为 `hf-mirror.com` |
-| 启动后 500「未找到 DeepSeek API key」 | Secret 没配或名字拼错（必须 `DEEPSEEK_API_KEY`） |
-| `/app/` 404 | Dockerfile 用多阶段构建（`node:20-slim` 里 `npm ci && npm run build`），确认这一步没报错 |
-| 内存不足 | 免费层 16GB，一般不会；若发生，减小 `RAG_K` 或去掉 fastembed |
+## 4. Docker Space（备选，账号支持免费 Docker 时）
 
-> `web/dist/` 不进仓库：Dockerfile 用 **多阶段构建**（`node:20-slim` 里 `npm ci && npm run build`），
-> 再把 `dist` 拷进运行镜像，所以不需要改 `.gitignore`。
+`deploy/hf-space/` 保留了一套多阶段 Dockerfile（Node 构建前端 + Python 运行 + 下载模型 + 建索引）。
+上传 `Dockerfile` 与 `README.md`，配置 Secret `DEEPSEEK_API_KEY`，端口 7860。**本机无 Docker，未验证。**
