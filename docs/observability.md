@@ -15,7 +15,7 @@
 
 | 字段 | 含义 |
 |---|---|
-| `kind` | `rag` / `chat` / `agent` / `tool`（后续可加 `eval`） |
+| `kind` | `rag` / `chat` / `agent` / `multi_agent` / `tool`（后续可加 `eval`） |
 | `name` | `POST /rag`、`mcp.search_docs` … |
 | `ok` / `error` | 成功与否、异常类型名（不含堆栈） |
 | `latency_ms` | 端到端耗时 |
@@ -32,6 +32,7 @@
 | `POST /rag` | `rag / POST /rag` | 成功与失败都记；失败带异常类型 |
 | `POST /agent` | `agent / POST /agent` | 两次模型调用的 token 累加；含 `used_tool` |
 | `POST /agent-raw` | `agent / POST /agent-raw` | ReAct 每轮 token 累加；含 `steps` / `used_tool` |
+| `POST /multi-agent` | `multi_agent / POST /multi-agent` | Supervisor + specialist 的总 token / 延迟；含 `route`、Agent 数、错误数 |
 | `POST /chat` | `chat / POST /chat` | 流式接口：记耗时与消息数（流式未取 usage，token 记 0） |
 | MCP 5 个工具 | `tool / mcp.<name>` | 装饰器 `@traced(...)`，成功/失败/耗时 |
 

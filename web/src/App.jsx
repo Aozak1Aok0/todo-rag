@@ -8,6 +8,8 @@ const EXAMPLES = [
   'todos 表里有没有 created_at 字段？',
 ]
 
+const MULTI_EXAMPLE = '我有多少条待办、多少条未完成？并说明 /rag-verify 是怎么做校验的'
+
 const STORAGE_KEY = 'todo-rag:history:v1'
 
 function loadHistory() {
@@ -22,6 +24,7 @@ function loadHistory() {
 export default function App() {
   const [question, setQuestion] = useState('')
   const [k, setK] = useState(10)
+  const [multi, setMulti] = useState(false)
   const [items, setItems] = useState(loadHistory)
   const [loading, setLoading] = useState(false)
   const inputRef = useRef(null)
@@ -36,21 +39,26 @@ export default function App() {
     }
   }, [items])
 
-  async function ask(text) {
+  async function ask(text, opts = {}) {
     const q = String(text ?? question).trim()
     if (!q || loading) return
+    const useMulti = opts.multi ?? multi
 
     const id = crypto.randomUUID ? crypto.randomUUID() : String(Date.now())
     setLoading(true)
     setQuestion('')
-    setItems((prev) => [{ id, question: q, pending: true }, ...prev])
+    setItems((prev) => [{ id, question: q, pending: true, multi: useMulti }, ...prev])
 
     const t0 = performance.now()
     try {
-      const resp = await fetch('/rag-verify', {
+      const endpoint = useMulti ? '/multi-agent' : '/rag-verify'
+      const body = useMulti
+        ? { question: q, k }
+        : { question: q, k, max_revisions: 0 }
+      const resp = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q, k, max_revisions: 0 }),
+        body: JSON.stringify(body),
       })
       const data = await resp.json().catch(() => ({}))
       if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`)
@@ -84,7 +92,7 @@ export default function App() {
         <div>
           <h1>知识库问答</h1>
           <div className="sub">
-            本地语料 · 混合检索（向量 + BM25）· DeepSeek 回答 · 独立校验
+            本地语料 · 混合检索 · DeepSeek 回答 · 独立校验 · 可选多 Agent
           </div>
         </div>
         <nav className="links">
@@ -106,6 +114,22 @@ export default function App() {
         />
         <div className="row">
           <span className="hint">Ctrl / ⌘ + Enter 发送</span>
+          <div className="mode-switch" role="group" aria-label="回答模式">
+            <button
+              className={multi ? '' : 'active'}
+              onClick={() => setMulti(false)}
+              disabled={loading}
+            >
+              RAG + 校验
+            </button>
+            <button
+              className={multi ? 'active' : ''}
+              onClick={() => setMulti(true)}
+              disabled={loading}
+            >
+              多 Agent
+            </button>
+          </div>
           <label className="sub" htmlFor="k">检索块数</label>
           <select id="k" value={k} onChange={(e) => setK(Number(e.target.value))}>
             {[5, 8, 10, 12].map((n) => (
@@ -113,7 +137,7 @@ export default function App() {
             ))}
           </select>
           <button className="primary" onClick={() => ask()} disabled={loading || !question.trim()}>
-            {loading ? '检索中…' : '问一问'}
+            {loading ? (multi ? '协作中…' : '检索中…') : '问一问'}
           </button>
         </div>
 
@@ -123,6 +147,16 @@ export default function App() {
               {ex}
             </button>
           ))}
+          <button
+            className="chip chip-accent"
+            onClick={() => {
+              setMulti(true)
+              ask(MULTI_EXAMPLE, { multi: true })
+            }}
+            disabled={loading}
+          >
+            多 Agent：{MULTI_EXAMPLE}
+          </button>
         </div>
       </section>
 

@@ -21,6 +21,7 @@
 | MCP server | `mcp_server.py`（stdio，5 个工具 + 2 个资源） |
 | 可观测 | 事件日志（JSONL）+ `GET /stats` 汇总 + `GET /stats-ui` 面板（次数 / 延迟 / p95 / token / 成本） |
 | 答案校验 | `POST /rag-verify`：多查询改写 + 独立校验 Agent 标注未被资料支持的断言（默认只报告，不自动改写） |
+| 多 Agent | `POST /multi-agent`：Supervisor 路由到 Todo / Docs specialist，双路由时汇总；Todo 只读，Docs 复用回答 + 校验 |
 
 ## 截图
 
@@ -75,6 +76,9 @@
 - `evals/rag-v1-report.md` —— 检索设计、纯向量失效分析、切块策略对比
 - `evals/q8-prompt-ab.md` —— 提示词 A/B/C 对比与假纠正分析
 - `docs/dual-agent.md` —— 双 Agent、校验的负结果、查询改写实测
+- `docs/multi-agent.md` —— Supervisor + Todo / Docs 多 Agent、路由评测与只读边界
+
+多 Agent 路由评测：10 条人工标注问题 **10/10** 路由正确（`evals/routing_eval.py`）。
 
 ## MCP
 
@@ -128,7 +132,9 @@ RAG 使用 `corpus/` 下的 15 个文件作为评测语料快照；需要本地 
 .\.venv\Scripts\python.exe tests\e2e_restart.py      # 起两次 uvicorn，验证跨进程持久化
 .\.venv\Scripts\python.exe tests\mcp_smoke.py        # MCP 工具与资源（--with-llm 会跑一次真实问答）
 .\.venv\Scripts\python.exe tests\obs_smoke.py        # 事件日志 → /stats 汇总
+.\.venv\Scripts\python.exe tests\multi_agent_smoke.py # 多 Agent 路由 / 只读边界 / HTTP 端点（不联网）
 .\.venv\Scripts\python.exe evals\retrieval_eval.py   # 检索层指标（秒级，不调用模型）
+.\.venv\Scripts\python.exe evals\routing_eval.py     # Supervisor 路由准确率（会调用模型）
 ```
 
 ## 目录
@@ -141,6 +147,7 @@ credentials.py       从 Windows 凭据管理器读取 key
 obs.py               事件日志与汇总
 embed.py             本地 embedding（bge-small-zh）
 rag/                 切块、索引、混合检索、提示词
+agents/              多 Agent 编排（Supervisor / Todo / Docs / Synthesizer）
 evals/               10 题评测集、baseline 与 RAG 结果、分析报告
 corpus/              评测语料快照（15 个文件，供检索索引使用）
 tests/               冒烟测试（接口 / 持久化 / MCP / 观测）
@@ -156,6 +163,7 @@ models/              本地 embedding 模型（不入库）
 - 使用 24M 中文 embedding 模型，对英文代码标识符区分度有限；检索层用 BM25 补齐。
 - 评测集为 10 题，单次运行波动约 ±0.3 分，结论以多次运行与粗指标为准。
 - `todos` 无用户概念；`/redoc`、`/openapi.json` 尚未纳入路由清单的评测锚点。
+- 多 Agent 的 Todo specialist 只读；写操作仍需走 `/api/todos` 或带审批的工具链。
 
 ## License
 

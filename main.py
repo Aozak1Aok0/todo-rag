@@ -79,6 +79,12 @@ class RagVerifyRequest(BaseModel):
     multi_query: bool = True  # 先改写查询再检索（实测 hit@1 9/10、MRR 0.95）
 
 
+class MultiAgentRequest(BaseModel):
+    question: str
+    k: int | None = None
+    multi_query: bool = True
+
+
 # ---------- 4. 待办接口 ----------
 @app.get("/api/todos")
 async def get_todos():
@@ -102,7 +108,13 @@ async def delete_todo(todo_id: int):
 
 @app.get("/")
 async def root():
-    return {"msg": "Todo + LLM API 运行中", "ui": "/rag-ui", "docs": "/docs", "stats": "/stats"}
+    return {
+        "msg": "Todo + LLM API 运行中",
+        "ui": "/rag-ui",
+        "docs": "/docs",
+        "stats": "/stats",
+        "multi_agent": "/multi-agent",
+    }
 
 
 def _api_key() -> str | None:
@@ -462,7 +474,48 @@ async def rag_verify(req: RagVerifyRequest):
     }
 
 
-# ---------- 9. 可观测汇总 ----------
+# ---------- 10. 多 Agent：Supervisor → Todo / Docs →（必要时）汇总 ----------
+@app.post("/multi-agent", summary="多 Agent：Supervisor 路由到待办/文档 specialist")
+async def multi_agent(req: MultiAgentRequest):
+    question = req.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="question 不能为空")
+
+    k = RAG_VERIFY_K if req.k is None else req.k
+    if not 1 <= k <= 12:
+        raise HTTPException(status_code=400, detail="k 必须在 1..12 之间")
+
+    client = get_client()
+    t0 = time.time()
+    try:
+        from agents.orchestrator import run_multi_agent
+
+        result = await run_multi_agent(
+            client, question, k=k, multi_query=req.multi_query
+        )
+    except Exception as e:  # noqa: BLE001
+        obs.log_event(
+            "multi_agent", "POST /multi-agent", ok=False,
+            error=type(e).__name__,
+            latency_ms=int((time.time() - t0) * 1000),
+            k=k,
+        )
+        raise HTTPException(status_code=502, detail=f"多 Agent 调用失败：{type(e).__name__}")
+
+    obs.log_event(
+        "multi_agent", "POST /multi-agent", ok=True,
+        latency_ms=int((time.time() - t0) * 1000),
+        tokens_in=result["usage"]["in"],
+        tokens_out=result["usage"]["out"],
+        k=k,
+        route=result["route"],
+        agents=len(result["trace"]),
+        errors=len(result["errors"]),
+    )
+    return result
+
+
+# ---------- 11. 可观测汇总 ----------
 @app.get("/stats-ui", include_in_schema=False)
 async def stats_ui():
     """可观测面板（单文件，无 CDN 依赖）。"""

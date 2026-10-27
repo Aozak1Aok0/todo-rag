@@ -5,9 +5,19 @@ function fmtMs(ms) {
   return ms >= 1000 ? (ms / 1000).toFixed(1) + ' s' : ms + ' ms'
 }
 
+const ROUTE_LABEL = {
+  todos: '待办 Agent',
+  docs: '文档 Agent',
+  both: '待办 + 文档',
+}
+
 export default function AnswerCard({ item }) {
-  const { question, answer, sources = [], usage, ms, error, pending, verification } = item
+  const {
+    question, answer, sources = [], usage, ms, error, pending,
+    verification, route, trace = [], plan,
+  } = item
   const [copied, setCopied] = useState(false)
+  const verifyPrefix = route === 'both' ? '文档部分校验' : '校验'
 
   async function copy() {
     try {
@@ -26,7 +36,7 @@ export default function AnswerCard({ item }) {
       {pending && (
         <div className="pending">
           <span className="spinner" />
-          检索 + 生成中…
+          {item.multi ? 'Supervisor 正在分派 Agent…' : '检索 + 生成中…'}
         </div>
       )}
 
@@ -40,15 +50,36 @@ export default function AnswerCard({ item }) {
             <span>{fmtMs(ms)}</span>
             {usage && <span>输入 {usage.in} / 输出 {usage.out} tokens</span>}
             <span>引用 {sources.length} 条</span>
+            {route && <span>路由 {ROUTE_LABEL[route] || route}</span>}
             <button className="ghost small" onClick={copy}>{copied ? '已复制' : '复制回答'}</button>
           </div>
+
+          {route && (
+            <div className="agent-trace">
+              <div className="agent-trace-head">
+                <span>多 Agent 协作轨迹</span>
+                <span className="badge">{ROUTE_LABEL[route] || route}</span>
+              </div>
+              <div className="trace-rows">
+                {trace.map((t, i) => (
+                  <div className="trace-row" key={`${t.agent}-${i}`}>
+                    <span className={'dot ' + (t.status === 'ok' ? 'ok' : 'err')} />
+                    <span className="agent-name">{t.agent}</span>
+                    <span className="agent-detail">{t.detail || ''}</span>
+                    <span className="agent-ms">{fmtMs(t.latency_ms)}</span>
+                  </div>
+                ))}
+              </div>
+              {plan?.reason && <div className="reason">路由理由：{plan.reason}</div>}
+            </div>
+          )}
 
           {verification && (
             <div className={'verify ' + (verification.verdict === 'ok' ? 'ok' : 'warn')}>
               <div className="verify-head">
                 {verification.verdict === 'ok'
-                  ? '校验：通过（断言均可在资料中找到依据）'
-                  : `校验：${(verification.unsupported || []).length} 条断言未被资料支持`}
+                  ? `${verifyPrefix}：通过（断言均可在资料中找到依据）`
+                  : `${verifyPrefix}：${(verification.unsupported || []).length} 条断言未被资料支持`}
               </div>
               {((verification.unsupported || []).length > 0 || verification.reason) && (
                 <details>

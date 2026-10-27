@@ -127,3 +127,8 @@
 
 数据层迁移后，DDL / `SEEDS` / `init_db` 都在 `store.py`，因此 Q3/Q7/Q9 的 `gold_sources` 补上
 `pra/python/fastapi-api/store.py`；题目与判分锚点不变。
+
+## 9. 与 `/multi-agent` 的关系
+
+`/rag-verify` 是纵向双 Agent（回答 + 校验）；`/multi-agent` 是横向多 Agent（Supervisor + Todo / Docs specialist）。
+两者不替代：多 Agent 里的 Docs specialist 直接复用本文件的 `pipeline.answer_verified`，见 `docs/multi-agent.md`。
