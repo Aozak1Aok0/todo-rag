@@ -3,6 +3,10 @@
 一个 FastAPI 待办服务：SQLite 持久化、SSE 流式对话、Function Calling、手写 ReAct，
 外加本地 RAG 问答（Chroma + 混合检索）与 MCP 工具化。带一套可复现的评测。
 
+> **在线演示（静态回放）**：<https://aozak1aok0.github.io/todo-rag/>
+>
+> 展示 10 道评测题的真实答案、引用与校验结果；线上页面不调用模型。
+
 ## 功能
 
 | 能力 | 实现 |
@@ -12,7 +16,7 @@
 | Function Calling | `POST /agent`（OpenAI 兼容 `tools` + `tool_choice="auto"`） |
 | 手写 ReAct | `POST /agent-raw`（自行解析 `Thought/Action/Action Input/Observation/Final Answer`，最多 5 步） |
 | RAG 问答 | `POST /rag`（混合检索 → 拼接上下文 → 回答 + `sources` 引用） |
-| 演示页 | `GET /rag-ui`（单文件，无 CDN 依赖） |
+| 演示 | 在线静态回放（GitHub Pages）+ 本地 `GET /rag-ui`（单文件，无 CDN 依赖） |
 | 本地文档 | `GET /docs`（Swagger 静态资源自托管，不依赖境外 CDN） |
 | MCP server | `mcp_server.py`（stdio，5 个工具 + 2 个资源） |
 | 可观测 | 事件日志（JSONL）+ `GET /stats` 汇总 + `GET /stats-ui` 面板（次数 / 延迟 / p95 / token / 成本） |

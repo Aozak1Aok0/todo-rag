@@ -41,7 +41,14 @@ try {
     git checkout --orphan $Branch
     git rm -rf .
     Copy-Item (Join-Path $tmp "*") . -Force
-    git add -A
+    # 只提交这 4 个文件：git rm 会把 .gitignore 也删掉，此时 git add -A 会把
+    # node_modules / models / chroma_db / todos.db 全部卷进来（曾造成 133MB 的分支）
+    $wanted = @("index.html", "data.json", "screenshot.png", ".nojekyll")
+    git add -- $wanted
+    $staged = @(git diff --cached --name-only)
+    if ($staged.Count -ne $wanted.Count) {
+        throw "暂存文件数量不对（$($staged.Count) 个）：$($staged -join ', ')"
+    }
     git commit -m "docs: static demo (GitHub Pages)"
 
     if ($Force) {

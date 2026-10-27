@@ -1,10 +1,14 @@
 # 部署与演示（2026-10-27）
 
+**在线地址：<https://aozak1aok0.github.io/todo-rag/>**（已可访问；静态回放，不调用模型）
+
 ## 0. 结论
 
 - 静态演示（真实运行回放）**优先托管在 GitHub Pages**：免费、无需额外账号、更新简单。
 - Hugging Face 的 Static Space 也可以，但需要确认可见性是 Public；Docker / Gradio 在当前账号下收费，不采用。
 - 完整交互（真检索 + 真生成）在本地跑，命令见第 3 节。
+- `gh-pages` 分支**只应包含** `index.html`、`data.json`、`screenshot.png`、`.nojekyll`；
+  不要发布 `todos.db`、`logs/`、`models/`、`web/node_modules/` 等运行时文件。
 
 ## 1. GitHub Pages（推荐）
 
@@ -13,11 +17,11 @@
 ### 一次性发布
 
 1. 先把当前改动提交到 `main` 并推送（工作区必须干净）；
-2. 运行发布脚本（会把静态文件推到一个独立的 `gh-pages` 分支）：
+2. 运行发布脚本（会把静态文件推到一个独立的 `gh-pages` 分支；远端已存在时加 `-Force`）：
 
 ```powershell
 cd D:\Experienment.py\todo-rag
-powershell -NoProfile -ExecutionPolicy Bypass -File deploy\gh-pages\publish.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File deploy\gh-pages\publish.ps1 -Force
 ```
 
 3. 打开仓库 **Settings → Pages**：
@@ -30,13 +34,22 @@ powershell -NoProfile -ExecutionPolicy Bypass -File deploy\gh-pages\publish.ps1
 https://aozak1aok0.github.io/todo-rag/
 ```
 
+发布后自检（应只列出 4 个文件）：
+
+```powershell
+git fetch origin gh-pages
+git ls-tree --name-only origin/gh-pages
+# 期望：.nojekyll  data.json  index.html  screenshot.png
+curl.exe -sS -o NUL -w "%{http_code}`n" https://aozak1aok0.github.io/todo-rag/
+```
+
 ### 以后更新回放数据
 
 ```powershell
 .\.venv\Scripts\python.exe evals\verify_eval.py --revisions 0 --multi-query --k 10 --out evals\verify-multi-k10-20261026.jsonl
 .\.venv\Scripts\python.exe deploy\hf-static\build_data.py
 git add deploy/hf-static/data.json && git commit -m "docs: refresh demo data" && git push
-powershell -NoProfile -ExecutionPolicy Bypass -File deploy\gh-pages\publish.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File deploy\gh-pages\publish.ps1 -Force
 ```
 
 > 脚本每次会重建 `gh-pages` 分支；远端已存在时加 `-Force` 覆盖（历史每次都会被重写，对生成内容是可接受的）。
