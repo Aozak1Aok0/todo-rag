@@ -2,7 +2,7 @@ r"""Supervisor + specialist 多 Agent 编排。
 
 分工：
 - Supervisor：只做路由/拆题，不回答业务问题；
-- Todo Agent：确定性读取 SQLite，不让模型编造待办；
+- Todo Agent：读操作确定性读 SQLite；写操作只生成待确认 proposal，不直接改库；
 - Docs Agent：复用 `rag.pipeline.answer_verified`，即「回答 + 独立校验」；
 - Synthesizer：只在 route=both 时合并两个 specialist 的输出，不补充新事实。
 
@@ -13,6 +13,8 @@ import json
 import re
 import time
 
+from agents.approvals import create_proposal
+from agents.write_planner import propose_write
 from rag import pipeline
 from store import list_todos
 
@@ -22,7 +24,7 @@ ROUTES = {"todos", "docs", "both"}
 SUPERVISOR_SYSTEM = (
     "你是多 Agent 系统的 Supervisor。只做路由和拆题，不回答问题。"
     "可选路由：todos（待办）、docs（代码库文档问答）、both（两者都需要）。"
-    "注意：当前 Todo Agent 只读，不能新增/删除/修改待办。"
+    "写待办请求只能生成待确认 proposal，绝不能声称已经执行。"
     "只输出 JSON，不要 markdown。"
 )
 
@@ -59,16 +61,26 @@ def _first_json(text):
         return {}
 
 
+def is_write_request(question):
+    """模型没给 intent 时的保守兜底；真正的写操作仍由写规划器校验。"""
+    marks = (
+        "添加", "新增", "加到", "加一条", "加个待办", "删除", "删掉",
+        "标记为", "改成", "勾选", "完成它", "设为完成", "设为未完成",
+    )
+    return any(x in (question or "") for x in marks)
+
+
 def build_supervisor_messages(question):
     user = (
         f"用户问题：{question}\n\n"
         "请输出 JSON：\n"
-        '{"route":"todos|docs|both","reason":"一句话",'
+        '{"route":"todos|docs|both","intent":"read|write","reason":"一句话",'
         '"todos_query":"给待办 Agent 的子问题","docs_query":"给文档 Agent 的子问题"}\n\n'
         "规则：\n"
-        "- 只问待办/完成状态 → todos\n"
+        "- 只查询待办/完成状态 → todos + intent=read\n"
+        "- 新增、删除、修改待办完成状态 → todos + intent=write；只生成 proposal，不执行\n"
         "- 只问代码、接口、实现、配置 → docs\n"
-        "- 同时问待办和代码/文档 → both，并把问题拆成两个子问题\n"
+        "- 同时问待办和代码/文档 → both，并把问题拆成两个子问题；有写操作时 intent=write\n"
         "- 不确定时选 docs\n"
         "- 非 both 时，另一个 query 可以为空"
     )
@@ -85,6 +97,15 @@ def parse_plan(text, question):
         route = "todos"
     if route not in ROUTES:
         route = "docs"
+    # 路由 JSON 坏掉时，明确的写请求至少不要误落到文档 Agent
+    if not data.get("route") and is_write_request(question):
+        route = "todos"
+
+    intent = str(data.get("intent") or "").strip().lower()
+    if intent not in {"read", "write"}:
+        intent = "write" if is_write_request(question) else "read"
+    if route == "docs":
+        intent = "read"
 
     docs_query = str(data.get("docs_query") or "").strip()
     todos_query = str(data.get("todos_query") or "").strip()
@@ -95,6 +116,7 @@ def parse_plan(text, question):
 
     return {
         "route": route,
+        "intent": intent,
         "reason": str(data.get("reason") or "").strip(),
         "todos_query": todos_query,
         "docs_query": docs_query,
@@ -125,11 +147,10 @@ def _todo_filter(question):
 
 def answer_todos(question, todos=None):
     """确定性回答待办，避免模型把待办数量/名称说错。"""
-    write_marks = ("添加", "新增", "加到", "加一条", "删除", "删掉", "标记为", "改成")
-    if any(x in (question or "") for x in write_marks):
+    if is_write_request(question):
         return {
-            "answer": "当前多 Agent 的待办 Agent 是只读的，不会新增、删除或修改数据；"
-                      "写操作请调用 `POST/DELETE /api/todos`，或使用带审批的工具调用。",
+            "answer": "这是一条写操作；写操作必须先由写规划器生成 proposal，"
+                      "再由人工确认，不能直接执行。",
             "todos": [],
             "selected": [],
             "write_blocked": True,
@@ -210,28 +231,65 @@ async def run_multi_agent(client, question, k=10, multi_query=True, docs_worker=
 
     todo_result = None
     docs_result = None
+    proposal = None
     errors = {}
 
     if route in {"todos", "both"}:
         t0 = time.perf_counter()
+        agent_name = "todo_planner" if plan["intent"] == "write" else "todos"
         try:
-            todo_result = answer_todos(plan["todos_query"])
-            trace.append({
-                "agent": "todos",
-                "status": "ok",
-                "latency_ms": int((time.perf_counter() - t0) * 1000),
-                "in": 0,
-                "out": 0,
-                "detail": (
-                    "只读拦截"
-                    if todo_result.get("write_blocked")
-                    else f"{len(todo_result['selected'])}/{len(todo_result['todos'])} 条"
-                ),
-            })
+            if plan["intent"] == "write":
+                todos = list_todos()
+                parsed, planner_usage = await propose_write(
+                    client, plan["todos_query"], todos
+                )
+                total_usage = _add(total_usage, planner_usage)
+                if parsed.get("action"):
+                    proposal = create_proposal(
+                        parsed["action"],
+                        parsed["args"],
+                        parsed["summary"],
+                        parsed.get("reason", ""),
+                    )
+                    todo_result = {
+                        "answer": (
+                            f"我准备{parsed['summary']}。"
+                            "这是写操作，确认后才会执行。"
+                        ),
+                        "todos": todos,
+                        "selected": [],
+                        "proposal": proposal,
+                    }
+                    detail = parsed["action"]
+                else:
+                    todo_result = {
+                        "answer": parsed.get("clarify") or "请明确要执行哪个写操作。",
+                        "todos": todos,
+                        "selected": [],
+                        "clarify": True,
+                    }
+                    detail = "clarify"
+                trace.append({
+                    "agent": agent_name,
+                    "status": "ok",
+                    "latency_ms": int((time.perf_counter() - t0) * 1000),
+                    **planner_usage,
+                    "detail": detail,
+                })
+            else:
+                todo_result = answer_todos(plan["todos_query"])
+                trace.append({
+                    "agent": agent_name,
+                    "status": "ok",
+                    "latency_ms": int((time.perf_counter() - t0) * 1000),
+                    "in": 0,
+                    "out": 0,
+                    "detail": f"{len(todo_result['selected'])}/{len(todo_result['todos'])} 条",
+                })
         except Exception as e:  # noqa: BLE001
             errors["todos"] = type(e).__name__
             trace.append({
-                "agent": "todos",
+                "agent": agent_name,
                 "status": "error",
                 "latency_ms": int((time.perf_counter() - t0) * 1000),
                 "in": 0,
@@ -275,7 +333,7 @@ async def run_multi_agent(client, question, k=10, multi_query=True, docs_worker=
     else:
         todo_answer = todo_result["answer"] if todo_result else "待办 Agent 失败。"
         docs_answer = docs_result["answer"] if docs_result else "文档 Agent 失败。"
-        if todo_result and docs_result:
+        if todo_result and docs_result and not proposal and not todo_result.get("clarify"):
             t0 = time.perf_counter()
             try:
                 resp = await client.chat.completions.create(
@@ -307,11 +365,20 @@ async def run_multi_agent(client, question, k=10, multi_query=True, docs_worker=
         else:
             answer = f"【待办】\n{todo_answer}\n\n【文档】\n{docs_answer}"
 
+    if proposal:
+        status = "approval_required"
+    elif todo_result and todo_result.get("clarify"):
+        status = "needs_clarification"
+    else:
+        status = "ok"
+
     docs_hits = (docs_result or {}).get("hits") or []
     verification = (docs_result or {}).get("verification")
     return {
         "answer": answer,
+        "status": status,
         "route": route,
+        "proposal": proposal,
         "plan": plan,
         "trace": trace,
         "errors": errors,

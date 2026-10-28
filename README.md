@@ -21,7 +21,7 @@
 | MCP server | `mcp_server.py`（stdio，5 个工具 + 2 个资源） |
 | 可观测 | 事件日志（JSONL）+ `GET /stats` 汇总 + `GET /stats-ui` 面板（次数 / 延迟 / p95 / token / 成本） |
 | 答案校验 | `POST /rag-verify`：多查询改写 + 独立校验 Agent 标注未被资料支持的断言（默认只报告，不自动改写） |
-| 多 Agent | `POST /multi-agent`：Supervisor 路由到 Todo / Docs specialist，双路由时汇总；Todo 只读，Docs 复用回答 + 校验 |
+| 多 Agent | `POST /multi-agent`：Supervisor 路由到 Todo / Docs specialist；Todo 读走确定性 SQLite，写操作生成 proposal，人工确认后由 `POST /multi-agent/approve` 执行 |
 
 ## 截图
 
@@ -78,7 +78,7 @@
 - `docs/dual-agent.md` —— 双 Agent、校验的负结果、查询改写实测
 - `docs/multi-agent.md` —— Supervisor + Todo / Docs 多 Agent、路由评测与只读边界
 
-多 Agent 路由评测：10 条人工标注问题 **10/10** 路由正确（`evals/routing_eval.py`）。
+多 Agent 路由评测：10 条人工标注问题 **10/10** 路由 + intent 正确（`evals/routing_eval.py`）。
 
 ## MCP
 
@@ -116,7 +116,7 @@ python -m venv .venv
 # 其他系统或想覆盖时：$env:DEEPSEEK_API_KEY = "<your key>"
 
 .\.venv\Scripts\python.exe -m uvicorn main:app --reload
-# 页面 http://127.0.0.1:8000/rag-ui · 文档 http://127.0.0.1:8000/docs
+# 页面 http://127.0.0.1:8000/rag-ui · React http://127.0.0.1:8000/app/ · 文档 http://127.0.0.1:8000/docs
 ```
 
 RAG 使用 `corpus/` 下的 15 个文件作为评测语料快照；需要本地 embedding 模型（约 91MB，不入库，见 `models/README.md`），然后建索引：
@@ -132,7 +132,7 @@ RAG 使用 `corpus/` 下的 15 个文件作为评测语料快照；需要本地 
 .\.venv\Scripts\python.exe tests\e2e_restart.py      # 起两次 uvicorn，验证跨进程持久化
 .\.venv\Scripts\python.exe tests\mcp_smoke.py        # MCP 工具与资源（--with-llm 会跑一次真实问答）
 .\.venv\Scripts\python.exe tests\obs_smoke.py        # 事件日志 → /stats 汇总
-.\.venv\Scripts\python.exe tests\multi_agent_smoke.py # 多 Agent 路由 / 只读边界 / HTTP 端点（不联网）
+.\.venv\Scripts\python.exe tests\multi_agent_smoke.py # 多 Agent 路由 / proposal 审批 / HTTP 端点（不联网）
 .\.venv\Scripts\python.exe evals\retrieval_eval.py   # 检索层指标（秒级，不调用模型）
 .\.venv\Scripts\python.exe evals\routing_eval.py     # Supervisor 路由准确率（会调用模型）
 ```
@@ -163,7 +163,7 @@ models/              本地 embedding 模型（不入库）
 - 使用 24M 中文 embedding 模型，对英文代码标识符区分度有限；检索层用 BM25 补齐。
 - 评测集为 10 题，单次运行波动约 ±0.3 分，结论以多次运行与粗指标为准。
 - `todos` 无用户概念；`/redoc`、`/openapi.json` 尚未纳入路由清单的评测锚点。
-- 多 Agent 的 Todo specialist 只读；写操作仍需走 `/api/todos` 或带审批的工具链。
+- 多 Agent 的写操作需要人工确认；proposal 存在单进程内存（5 分钟、单次消费），重启会丢失。
 
 ## License
 

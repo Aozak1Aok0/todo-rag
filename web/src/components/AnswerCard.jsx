@@ -11,13 +11,22 @@ const ROUTE_LABEL = {
   both: '待办 + 文档',
 }
 
-export default function AnswerCard({ item }) {
+export default function AnswerCard({ item, onDecide }) {
   const {
     question, answer, sources = [], usage, ms, error, pending,
-    verification, route, trace = [], plan,
+    verification, route, trace = [], plan, proposal, deciding, decisionError,
   } = item
   const [copied, setCopied] = useState(false)
   const verifyPrefix = route === 'both' ? '文档部分校验' : '校验'
+  const routeLabel = plan?.intent === 'write' && route === 'todos'
+    ? '待办写入'
+    : (ROUTE_LABEL[route] || route)
+  const proposalExpired = proposal?.expires_at
+    ? Date.parse(proposal.expires_at) <= Date.now()
+    : false
+  const proposalMinutes = proposal?.expires_at
+    ? Math.max(1, Math.ceil((Date.parse(proposal.expires_at) - Date.now()) / 60000))
+    : Math.max(1, Math.ceil((proposal?.expires_in_seconds || 0) / 60))
 
   async function copy() {
     try {
@@ -50,15 +59,55 @@ export default function AnswerCard({ item }) {
             <span>{fmtMs(ms)}</span>
             {usage && <span>输入 {usage.in} / 输出 {usage.out} tokens</span>}
             <span>引用 {sources.length} 条</span>
-            {route && <span>路由 {ROUTE_LABEL[route] || route}</span>}
+            {route && <span>路由 {routeLabel}</span>}
             <button className="ghost small" onClick={copy}>{copied ? '已复制' : '复制回答'}</button>
           </div>
+
+          {proposal && proposal.status === 'pending' && (
+            <div className={'proposal' + (proposalExpired ? ' expired' : '')}>
+              <div className="proposal-head">
+                <span>需要确认的写操作</span>
+                <span className={'badge ' + (proposalExpired ? 'muted' : 'warn')}>
+                  {proposalExpired ? '已过期' : '待确认'}
+                </span>
+              </div>
+              <div className="proposal-summary">{proposal.summary}</div>
+              <div className="proposal-args">
+                {proposal.action} · {JSON.stringify(proposal.args)}
+              </div>
+              {!proposalExpired && (
+                <div className="proposal-actions">
+                  <button
+                    className="primary small"
+                    disabled={deciding}
+                    onClick={() => onDecide?.(item, true)}
+                  >
+                    {deciding ? '执行中…' : '确认执行'}
+                  </button>
+                  <button
+                    className="ghost small"
+                    disabled={deciding}
+                    onClick={() => onDecide?.(item, false)}
+                  >
+                    取消
+                  </button>
+                </div>
+              )}
+              <div className="hint">
+                {proposalExpired
+                  ? 'proposal 已过期，请重新发起'
+                  : `确认前不会修改数据 · ${proposalMinutes} 分钟内有效`}
+              </div>
+            </div>
+          )}
+
+          {decisionError && <div className="error">确认失败：{decisionError}</div>}
 
           {route && (
             <div className="agent-trace">
               <div className="agent-trace-head">
                 <span>多 Agent 协作轨迹</span>
-                <span className="badge">{ROUTE_LABEL[route] || route}</span>
+                <span className="badge">{routeLabel}</span>
               </div>
               <div className="trace-rows">
                 {trace.map((t, i) => (

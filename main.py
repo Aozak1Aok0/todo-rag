@@ -85,6 +85,11 @@ class MultiAgentRequest(BaseModel):
     multi_query: bool = True
 
 
+class ApprovalRequest(BaseModel):
+    proposal_id: str
+    approved: bool
+
+
 # ---------- 4. 待办接口 ----------
 @app.get("/api/todos")
 async def get_todos():
@@ -114,6 +119,7 @@ async def root():
         "docs": "/docs",
         "stats": "/stats",
         "multi_agent": "/multi-agent",
+        "multi_agent_approve": "/multi-agent/approve",
     }
 
 
@@ -513,6 +519,72 @@ async def multi_agent(req: MultiAgentRequest):
         errors=len(result["errors"]),
     )
     return result
+
+
+# ---------- 10b. 人工确认后才执行 Todo 写操作 ----------
+@app.post("/multi-agent/approve", summary="确认/取消多 Agent 生成的待办写操作")
+async def approve_multi_agent(req: ApprovalRequest):
+    proposal_id = req.proposal_id.strip()
+    if not proposal_id:
+        raise HTTPException(status_code=400, detail="proposal_id 不能为空")
+
+    from agents.approvals import (
+        ProposalConflict,
+        ProposalExpired,
+        ProposalNotFound,
+        cancel_proposal,
+        consume_proposal,
+    )
+    from agents.todo_writes import execute_proposal
+
+    t0 = time.time()
+    if not req.approved:
+        try:
+            proposal = cancel_proposal(proposal_id)
+        except ProposalNotFound:
+            raise HTTPException(status_code=404, detail="proposal 不存在、已使用或已取消")
+        except ProposalExpired:
+            raise HTTPException(status_code=410, detail="proposal 已过期，请重新发起")
+        obs.log_event(
+            "multi_agent", "POST /multi-agent/approve", ok=True,
+            latency_ms=int((time.time() - t0) * 1000),
+            status="cancelled", action=proposal["action"],
+        )
+        return {
+            "status": "cancelled",
+            "proposal_id": proposal_id,
+            "summary": proposal["summary"],
+        }
+
+    try:
+        proposal = consume_proposal(proposal_id)
+        try:
+            result = execute_proposal(proposal)
+        except (ProposalConflict, TypeError, ValueError) as e:
+            obs.log_event(
+                "multi_agent", "POST /multi-agent/approve", ok=False,
+                error="conflict",
+                latency_ms=int((time.time() - t0) * 1000),
+                status="conflict", action=proposal["action"],
+            )
+            raise HTTPException(status_code=409, detail=f"执行失败：{e}")
+    except ProposalNotFound:
+        raise HTTPException(status_code=404, detail="proposal 不存在、已使用或已取消")
+    except ProposalExpired:
+        raise HTTPException(status_code=410, detail="proposal 已过期，请重新发起")
+
+    obs.log_event(
+        "multi_agent", "POST /multi-agent/approve", ok=True,
+        latency_ms=int((time.time() - t0) * 1000),
+        status="executed", action=proposal["action"],
+    )
+    return {
+        "status": "executed",
+        "proposal_id": proposal_id,
+        "action": proposal["action"],
+        "result": result,
+        "todos": list_todos(),
+    }
 
 
 # ---------- 11. 可观测汇总 ----------

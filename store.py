@@ -58,6 +58,19 @@ def list_todos():
         conn.close()
 
 
+def get_todo(todo_id: int):
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT id, name, completed FROM todos WHERE id = ?", (todo_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return {"id": row["id"], "name": row["name"], "completed": bool(row["completed"])}
+    finally:
+        conn.close()
+
+
 def add_todo(name: str) -> dict:
     name = (name or "").strip()
     if not name:
@@ -75,6 +88,19 @@ def remove_todo(todo_id: int) -> bool:
     conn = _connect()
     try:
         cur = conn.execute("DELETE FROM todos WHERE id = ?", (todo_id,))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def set_completed(todo_id: int, completed: bool) -> bool:
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "UPDATE todos SET completed = ? WHERE id = ?",
+            (1 if completed else 0, todo_id),
+        )
         conn.commit()
         return cur.rowcount > 0
     finally:

@@ -33,6 +33,7 @@
 | `POST /agent` | `agent / POST /agent` | 两次模型调用的 token 累加；含 `used_tool` |
 | `POST /agent-raw` | `agent / POST /agent-raw` | ReAct 每轮 token 累加；含 `steps` / `used_tool` |
 | `POST /multi-agent` | `multi_agent / POST /multi-agent` | Supervisor + specialist 的总 token / 延迟；含 `route`、Agent 数、错误数 |
+| `POST /multi-agent/approve` | `multi_agent / POST /multi-agent/approve` | 只记确认/取消、动作类型、耗时；不记 proposal 内容 |
 | `POST /chat` | `chat / POST /chat` | 流式接口：记耗时与消息数（流式未取 usage，token 记 0） |
 | MCP 5 个工具 | `tool / mcp.<name>` | 装饰器 `@traced(...)`，成功/失败/耗时 |
 

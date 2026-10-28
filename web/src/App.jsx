@@ -9,6 +9,7 @@ const EXAMPLES = [
 ]
 
 const MULTI_EXAMPLE = '我有多少条待办、多少条未完成？并说明 /rag-verify 是怎么做校验的'
+const WRITE_EXAMPLE = '把「学 Rust」加到待办'
 
 const STORAGE_KEY = 'todo-rag:history:v1'
 
@@ -76,6 +77,51 @@ export default function App() {
     } finally {
       setLoading(false)
       inputRef.current?.focus()
+    }
+  }
+
+  async function decide(item, approved) {
+    if (!item?.proposal || item.deciding) return
+    setItems((prev) =>
+      prev.map((it) =>
+        it.id === item.id ? { ...it, deciding: true, decisionError: null } : it
+      )
+    )
+    try {
+      const resp = await fetch('/multi-agent/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proposal_id: item.proposal.id, approved }),
+      })
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`)
+      setItems((prev) =>
+        prev.map((it) =>
+          it.id === item.id
+            ? {
+                ...it,
+                deciding: false,
+                proposal: null,
+                decision: data,
+                answer: (() => {
+                  const msg = data.status === 'executed'
+                    ? `✅ 已执行：${data.result?.message || '完成'}`
+                    : '已取消，未修改数据。'
+                  const writeOnly = it.route === 'todos' && it.plan?.intent === 'write'
+                  return writeOnly ? msg : `${msg}\n\n${it.answer}`
+                })(),
+              }
+            : it
+        )
+      )
+    } catch (e) {
+      setItems((prev) =>
+        prev.map((it) =>
+          it.id === item.id
+            ? { ...it, deciding: false, decisionError: e.message || String(e) }
+            : it
+        )
+      )
     }
   }
 
@@ -157,6 +203,16 @@ export default function App() {
           >
             多 Agent：{MULTI_EXAMPLE}
           </button>
+          <button
+            className="chip chip-warn"
+            onClick={() => {
+              setMulti(true)
+              ask(WRITE_EXAMPLE, { multi: true })
+            }}
+            disabled={loading}
+          >
+            多 Agent 写入：{WRITE_EXAMPLE}
+          </button>
         </div>
       </section>
 
@@ -167,7 +223,7 @@ export default function App() {
           </div>
         )}
         {items.map((item) => (
-          <AnswerCard key={item.id} item={item} />
+          <AnswerCard key={item.id} item={item} onDecide={decide} />
         ))}
       </section>
 
