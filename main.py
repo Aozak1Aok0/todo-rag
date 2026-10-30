@@ -533,7 +533,8 @@ async def approve_multi_agent(req: ApprovalRequest):
         ProposalExpired,
         ProposalNotFound,
         cancel_proposal,
-        consume_proposal,
+        claim_proposal,
+        finish_proposal,
     )
     from agents.todo_writes import execute_proposal
 
@@ -557,10 +558,11 @@ async def approve_multi_agent(req: ApprovalRequest):
         }
 
     try:
-        proposal = consume_proposal(proposal_id)
+        proposal = claim_proposal(proposal_id)
         try:
             result = execute_proposal(proposal)
         except (ProposalConflict, TypeError, ValueError) as e:
+            finish_proposal(proposal_id, "failed", {"error": str(e)})
             obs.log_event(
                 "multi_agent", "POST /multi-agent/approve", ok=False,
                 error="conflict",
@@ -568,11 +570,21 @@ async def approve_multi_agent(req: ApprovalRequest):
                 status="conflict", action=proposal["action"],
             )
             raise HTTPException(status_code=409, detail=f"执行失败：{e}")
+        except Exception as e:  # noqa: BLE001
+            finish_proposal(proposal_id, "failed", {"error": type(e).__name__})
+            obs.log_event(
+                "multi_agent", "POST /multi-agent/approve", ok=False,
+                error=type(e).__name__,
+                latency_ms=int((time.time() - t0) * 1000),
+                status="failed", action=proposal["action"],
+            )
+            raise HTTPException(status_code=500, detail="写操作执行失败")
     except ProposalNotFound:
         raise HTTPException(status_code=404, detail="proposal 不存在、已使用或已取消")
     except ProposalExpired:
         raise HTTPException(status_code=410, detail="proposal 已过期，请重新发起")
 
+    finish_proposal(proposal_id, "executed", result)
     obs.log_event(
         "multi_agent", "POST /multi-agent/approve", ok=True,
         latency_ms=int((time.time() - t0) * 1000),

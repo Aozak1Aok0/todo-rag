@@ -8,6 +8,7 @@ import asyncio
 import json
 import os
 import shutil
+import sqlite3
 import sys
 import tempfile
 import time
@@ -24,7 +25,7 @@ from agents import approvals, orchestrator  # noqa: E402
 from agents.approvals import ProposalExpired, ProposalStore  # noqa: E402
 from agents.write_planner import parse_proposal  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-from store import add_todo, list_todos, remove_todo  # noqa: E402
+from store import add_todo, db_path, list_todos, remove_todo  # noqa: E402
 
 
 class _Usage:
@@ -356,7 +357,15 @@ def t14_expired_http():
         "学 Rust3",
     )
     pid = res["proposal"]["id"]
-    approvals.store._items[pid]["expires_at"] = time.time() - 1
+    conn = sqlite3.connect(db_path())
+    try:
+        conn.execute(
+            "UPDATE agent_proposals SET expires_at=? WHERE id=?",
+            (time.time() - 1, pid),
+        )
+        conn.commit()
+    finally:
+        conn.close()
     c = TestClient(main.app)
     r = c.post("/multi-agent/approve", json={"proposal_id": pid, "approved": True})
     assert r.status_code == 410
@@ -387,6 +396,24 @@ def t15_write_plus_docs():
     return f"agents={agents}"
 
 
+def t16_proposal_survives_store_instance():
+    approvals.reset()
+    p = approvals.create_proposal(
+        "add_todo", {"name": "持久化 proposal"}, "新增待办：「持久化 proposal」"
+    )
+    other = ProposalStore()
+    claimed = other.claim(p["id"])
+    assert claimed["id"] == p["id"]
+    other.finish(p["id"], "executed", {"message": "ok"})
+    c = TestClient(main.app)
+    r = c.post(
+        "/multi-agent/approve",
+        json={"proposal_id": p["id"], "approved": True},
+    )
+    assert r.status_code == 404
+    return "persisted + claimed once"
+
+
 def run(name, fn):
     try:
         return name, True, fn() or ""
@@ -411,6 +438,7 @@ def main_run():
         run("T13 目标已变化", t13_stale_target_conflict),
         run("T14 过期 HTTP", t14_expired_http),
         run("T15 写入 + 文档", t15_write_plus_docs),
+        run("T16 重启后可见", t16_proposal_survives_store_instance),
     ]
     print()
     for name, ok, detail in results:

@@ -66,16 +66,20 @@ Todo 读取走确定性代码而不是 LLM，是有意的：待办名称、id、
 
 ### 3.2 proposal 生命周期
 
-| 状态 | 含义 |
+| 状态 / 结果 | 含义 |
 |---|---|
 | `pending` | 已生成，等待人工确认；默认 5 分钟有效 |
+| `executing` | 已被某个进程抢占，正在执行 |
 | `executed` | 已确认并成功写入 |
 | `cancelled` | 用户取消，未修改数据 |
+| `failed` | 执行失败，不会重试 |
+| `expired` | 超过有效期，已作废 |
 | `404` | proposal 不存在、已消费或已取消 |
 | `410` | proposal 已过期 |
 | `409` | 执行时目标数据已变化（如待办被删） |
 
-当前 proposal 存在**单进程内存**里，不落盘；服务重启会丢失。多 worker / 多用户部署需要换成数据库或带签名、绑定用户的审批 token。
+proposal 落在 `TODO_DB` 的 `agent_proposals` 表，服务重启不会丢；`claim` 用 SQLite 条件更新做单次抢占，因此单进程多 worker 也不会重复执行。
+多用户部署仍需要登录态 / 权限绑定；当前 proposal id 本身就是 bearer token。
 
 ## 4. 接口
 
@@ -196,6 +200,7 @@ Docs Agent 复用 `pipeline.answer_verified`，所以返回里的 `sources` 和 
 - 确认前数据库没有「学 Rust」
 - 确认后新增成功，proposal 再消费一次返回 `404`
 - 真实验证还覆盖了「标记完成」和「删除」两种 action
+- 同一个 `TODO_DB` 重启 uvicorn 后，原 proposal 仍能确认执行
 
 这只是单次采样，不能当成稳定延迟承诺。固定成本主要来自 Docs Agent 的多查询和校验。
 
@@ -210,6 +215,7 @@ Docs Agent 复用 `pipeline.answer_verified`，所以返回里的 `sources` 和 
 - 路由 JSON 解析、坏 JSON 回退、`intent=write` 兜底；
 - Todo Agent 的全部 / 未完成 / 已完成过滤；
 - Write Planner 生成 proposal，确认前不落库；
+- proposal 落 SQLite，重启后仍可 claim；
 - 确认执行、取消、单次消费、非法 id、过期、目标已变化（409）、标记完成；
 - todos / docs / both 三条路径与 trace；
 - `POST /multi-agent` 和 `POST /multi-agent/approve` HTTP 端点。
@@ -218,8 +224,8 @@ Docs Agent 复用 `pipeline.answer_verified`，所以返回里的 `sources` 和 
 
 ## 9. 已知限制与下一步
 
-- proposal 存在单进程内存，重启丢失；多 worker / 多用户需要持久化 + 用户绑定。
+- proposal 已落 SQLite，重启不丢；但进程如果在 `executing` 阶段崩溃，当前还没有自动回收/重试策略。
 - proposal id 是 bearer token，没有额外鉴权；本地单用户可用，公网部署需要登录态。
 - route=both 且有待确认写操作时，不做 LLM 汇总，直接拼接「待办 + 文档」，避免模型改写 proposal 文案。
 - route=both 目前顺序执行（Todo 很快，Docs 是瓶颈）；可以把 Todo 与 Docs 放进 `asyncio.gather`，但收益很小。
-- 下一步可以做：把 proposal 落到 SQLite、把 write planner 的提议/确认/执行轨迹写进 `/stats`、按文件/模块拆多个 Docs specialist。
+- 下一步可以做：stale `executing` 回收、proposal 用户绑定、把 write planner 的提议/确认/执行轨迹写进 `/stats`、按文件/模块拆多个 Docs specialist。
