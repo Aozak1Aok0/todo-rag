@@ -120,6 +120,7 @@ async def root():
         "stats": "/stats",
         "multi_agent": "/multi-agent",
         "multi_agent_approve": "/multi-agent/approve",
+        "proposals": "/multi-agent/proposals",
     }
 
 
@@ -599,6 +600,37 @@ async def approve_multi_agent(req: ApprovalRequest):
     }
 
 
+# ---------- 10c. proposal 审计查询（本地单用户；公网需加鉴权） ----------
+@app.get("/multi-agent/proposals", summary="查询 proposal 审计记录")
+async def list_multi_agent_proposals(
+    status: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+):
+    from agents.approvals import ALLOWED_STATUSES, list_proposals
+
+    if status and status not in ALLOWED_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"status 必须是：{', '.join(sorted(ALLOWED_STATUSES))}",
+        )
+    if not 1 <= limit <= 100:
+        raise HTTPException(status_code=400, detail="limit 必须在 1..100 之间")
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="offset 不能为负数")
+    return list_proposals(status, limit, offset)
+
+
+@app.get("/multi-agent/proposals/{proposal_id}", summary="查询单条 proposal 审计记录")
+async def get_multi_agent_proposal(proposal_id: str):
+    from agents.approvals import get_proposal
+
+    proposal = get_proposal(proposal_id.strip())
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="proposal 不存在")
+    return proposal
+
+
 # ---------- 11. 可观测汇总 ----------
 @app.get("/stats-ui", include_in_schema=False)
 async def stats_ui():
@@ -610,4 +642,11 @@ async def stats_ui():
 async def stats(days: int = 7):
     if not 1 <= days <= 90:
         raise HTTPException(status_code=400, detail="days 必须在 1..90 之间")
-    return obs.summarize(days)
+    result = obs.summarize(days)
+    try:
+        from agents.approvals import summarize_proposals
+
+        result["proposals"] = summarize_proposals(days)
+    except Exception as e:  # noqa: BLE001 —— 审计面板失败不能拖垮事件汇总
+        result["proposals"] = {"error": type(e).__name__}
+    return result

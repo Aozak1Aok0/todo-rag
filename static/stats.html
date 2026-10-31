@@ -32,7 +32,18 @@
   td.num{font-family:var(--mono)}
   .kind{color:var(--accent)}
   .err{color:var(--err)}
+  .warn{color:var(--warn)}
   .empty{color:var(--muted);padding:20px 0}
+  .proposal-section{margin-top:24px}
+  .section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .proposal-cards{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));margin-top:10px}
+  .pills{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .pill{border:1px solid var(--line);border-radius:999px;padding:4px 10px;color:var(--muted);font-size:12px}
+  .pill .n{font:12px var(--mono);color:var(--text);margin-left:6px}
+  .pill.pending,.pill.executing{color:var(--warn);border-color:rgba(255,180,84,.4)}
+  .pill.executed{color:var(--ok);border-color:rgba(123,216,143,.4)}
+  .pill.failed,.pill.expired{color:var(--err);border-color:rgba(255,107,107,.4)}
+  .proposal-empty{color:var(--muted);padding:14px 0}
   footer{margin-top:28px;color:var(--muted);font-size:12px}
 </style>
 </head>
@@ -41,7 +52,7 @@
   <header>
     <div>
       <h1>可观测面板</h1>
-      <div class="sub">接口与 MCP 工具的事件汇总 · 数据来自 <code>/stats</code></div>
+      <div class="sub">接口与 MCP 工具的事件汇总 + proposal 审计 · 数据来自 <code>/stats</code></div>
     </div>
     <div class="controls">
       <select id="days">
@@ -54,6 +65,26 @@
   </header>
 
   <div class="cards" id="cards"></div>
+
+  <section class="proposal-section">
+    <div class="section-head">
+      <div>
+        <div class="sub">Proposal 审计 · 按创建时间落入当前窗口</div>
+        <div class="pills" id="status-pills"></div>
+      </div>
+    </div>
+    <div class="cards proposal-cards" id="proposal-cards"></div>
+    <div class="proposal-empty" id="proposal-empty" style="display:none">这个窗口内还没有写操作 proposal。</div>
+    <table>
+      <thead>
+        <tr>
+          <th>action</th><th>总数</th><th>已执行</th><th>已取消</th>
+          <th>失败</th><th>过期</th><th>待确认</th>
+        </tr>
+      </thead>
+      <tbody id="action-rows"></tbody>
+    </table>
+  </section>
 
   <section style="margin-top:22px">
     <div class="sub">按类型 / 名称</div>
@@ -87,6 +118,22 @@ function card(label, value, cls) {
 
 function fmtMs(ms) { return ms >= 1000 ? (ms / 1000).toFixed(2) + ' s' : ms + ' ms'; }
 function fmtCost(c) { return '$' + (c < 0.01 ? c.toFixed(5) : c.toFixed(4)); }
+function pct(x) { return ((x || 0) * 100).toFixed(1) + '%'; }
+function fmtAge(sec) {
+  if (!sec) return '0 s';
+  if (sec < 60) return Math.round(sec) + ' s';
+  if (sec < 3600) return Math.round(sec / 60) + ' min';
+  return (sec / 3600).toFixed(1) + ' h';
+}
+
+const STATUS_LABEL = {
+  pending: '待确认',
+  executing: '执行中',
+  executed: '已执行',
+  cancelled: '已取消',
+  failed: '失败',
+  expired: '已过期',
+};
 
 async function load() {
   const days = $('#days').value;
@@ -105,6 +152,59 @@ async function load() {
     card('输出 tokens', t.tokens_out.toLocaleString()),
     card('成本', fmtCost(t.cost_usd))
   );
+
+  const p = d.proposals || {};
+  const proposalCards = $('#proposal-cards');
+  const statusPills = $('#status-pills');
+  const actionRows = $('#action-rows');
+  statusPills.replaceChildren();
+  actionRows.replaceChildren();
+
+  if (p.error) {
+    proposalCards.replaceChildren(card('Proposal 审计', p.error, 'err'));
+    $('#proposal-empty').style.display = 'none';
+  } else {
+    const statuses = p.by_status || {};
+    proposalCards.replaceChildren(
+      card('proposal 总数', String(p.total || 0)),
+      card('确认率', pct(p.approval_rate)),
+      card('失败率', pct(p.failure_rate), p.failure_rate ? 'err' : ''),
+      card('stale 回收', String(p.stale_recovered || 0), p.stale_recovered ? 'warn' : ''),
+      card('平均决策', fmtMs(p.avg_decision_ms || 0)),
+      card('p95 决策', fmtMs(p.p95_decision_ms || 0)),
+      card('待确认', String(statuses.pending || 0)),
+      card('最老待确认', fmtAge(p.oldest_pending_seconds || 0))
+    );
+
+    for (const [status, label] of Object.entries(STATUS_LABEL)) {
+      const el = document.createElement('span');
+      el.className = 'pill ' + status;
+      el.textContent = label;
+      const n = document.createElement('span');
+      n.className = 'n';
+      n.textContent = String(statuses[status] || 0);
+      el.append(n);
+      statusPills.append(el);
+    }
+
+    for (const a of p.by_action || []) {
+      const tr = document.createElement('tr');
+      const vals = [
+        [a.action, 'kind'], [String(a.total || 0), 'num'],
+        [String(a.executed || 0), 'num'], [String(a.cancelled || 0), 'num'],
+        [String(a.failed || 0), 'num'], [String(a.expired || 0), 'num'],
+        [String(a.pending || 0), 'num'],
+      ];
+      for (const [val, cls] of vals) {
+        const td = document.createElement('td');
+        if (cls) td.className = cls;
+        td.textContent = val;
+        tr.append(td);
+      }
+      actionRows.append(tr);
+    }
+    $('#proposal-empty').style.display = p.total ? 'none' : 'block';
+  }
 
   const rows = $('#rows');
   rows.replaceChildren();

@@ -1,6 +1,6 @@
 # 可观测（最小闭环，2026-10-24）
 
-> 目标：回答三个问题 —— **这周花了多少、哪类请求最慢、失败率多少**。
+> 目标：回答四个问题 —— **这周花了多少、哪类请求最慢、失败率多少、写操作确认/失败情况如何**。
 > 原则：只记事后有用的字段；**不记 key、不记完整答案**；日志写失败不能拖垮主流程。
 
 ## 1. 事件模型
@@ -50,9 +50,36 @@ JSON 示例：
   "totals": {"count": 6, "errors": 0, "tokens_in": 907, "tokens_out": 83,
              "cost_usd": 0.000336, "avg_latency_ms": 1002,
              "p95_latency_ms": 1002, "error_rate": 0.0},
-  "groups": [{"kind": "rag", "name": "POST /rag", ...}]
+  "groups": [{"kind": "rag", "name": "POST /rag", ...}],
+  "proposals": {
+    "window_days": 7, "total": 12, "decided": 10,
+    "by_status": {"pending": 2, "executing": 0, "executed": 8,
+                  "cancelled": 1, "failed": 1, "expired": 0},
+    "by_action": [{"action": "add_todo", "total": 8, "executed": 6, ...}],
+    "approval_rate": 0.8, "cancel_rate": 0.1, "failure_rate": 0.1,
+    "stale_recovered": 1, "avg_decision_ms": 1200, "p95_decision_ms": 2500,
+    "oldest_pending_seconds": 45, "oldest_executing_seconds": 0
+  }
 }
 ```
+
+### proposal 审计指标口径
+
+数据直接来自 SQLite `agent_proposals`，按 **created_at 落入窗口** 统计（不是按审批时间）。
+
+| 字段 | 含义 |
+|---|---|
+| `total` / `decided` | 窗口内 proposal 总数 / 已有终态的数量 |
+| `by_status` | pending / executing / executed / cancelled / failed / expired |
+| `by_action` | 每个动作的总数及各状态数量 |
+| `approval_rate` | `executed / decided` |
+| `cancel_rate` / `failure_rate` | `cancelled / decided`、`failed / decided` |
+| `stale_recovered` | `failed` 且 result.error 为 `stale_executing` 的数量 |
+| `avg_decision_ms` / `p95_decision_ms` | `finished_at - created_at` |
+| `oldest_pending_seconds` | 最老 pending proposal 的年龄 |
+| `oldest_executing_seconds` | 最老 executing proposal 的年龄 |
+
+`/stats-ui` 已增加 proposal 审计区：总数、确认率、失败率、stale 回收、决策耗时和按动作拆分。
 
 ## 4. 成本口径
 
@@ -76,6 +103,7 @@ $env:OBS_DIR="$env:TEMP\obs-mcp"; .\.venv\Scripts\python.exe tests\mcp_smoke.py
 - `/rag` 一次：`907/69 token, $0.000321, 1064ms`；
 - `/agent-raw` 用假客户端：token 累计 `100/20`，事件落盘正确；
 - `/stats-ui` 返回 200；
+- `/stats` 同时返回 `proposals` 审计汇总；
 - MCP 冒烟产生 5 条 `tool` 事件（list/add/list/delete/search），`search_docs` 因进程内首次加载 embedding 模型耗时约 1.7s。
 
 ## 6. 限制与下一步

@@ -260,9 +260,12 @@ def t8_approve_executes():
     body = r.json()
     assert body["status"] == "executed"
     assert any(t["name"] == "学 Go" for t in list_todos())
+    audit = c.get(f"/multi-agent/proposals/{pid}").json()
+    assert audit["status"] == "executed"
+    assert audit["result"]["message"].startswith("已新增待办")
     again = c.post("/multi-agent/approve", json={"proposal_id": pid, "approved": True})
     assert again.status_code == 404
-    return f"status={body['status']} single_use={again.status_code}"
+    return f"status={body['status']} single_use={again.status_code} audit=executed"
 
 
 def t9_cancel_does_nothing():
@@ -279,7 +282,9 @@ def t9_cancel_does_nothing():
     assert r.status_code == 200
     assert r.json()["status"] == "cancelled"
     assert all(t["name"] != "学 Rust2" for t in list_todos())
-    return "cancelled"
+    audit = c.get(f"/multi-agent/proposals/{res['proposal']['id']}").json()
+    assert audit["status"] == "cancelled"
+    return "cancelled + audit"
 
 
 def t10_invalid_id_needs_clarification():
@@ -347,7 +352,9 @@ def t13_stale_target_conflict():
         json={"proposal_id": res["proposal"]["id"], "approved": True},
     )
     assert r.status_code == 409
-    return f"status={r.status_code}"
+    audit = c.get(f"/multi-agent/proposals/{res['proposal']['id']}").json()
+    assert audit["status"] == "failed"
+    return f"status={r.status_code} audit=failed"
 
 
 def t14_expired_http():
@@ -414,6 +421,96 @@ def t16_proposal_survives_store_instance():
     return "persisted + claimed once"
 
 
+def t17_audit_list_get():
+    approvals.reset()
+    p = approvals.create_proposal(
+        "add_todo", {"name": "审计测试"}, "新增待办：「审计测试」"
+    )
+    c = TestClient(main.app)
+    r = c.get("/multi-agent/proposals?limit=10")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 1
+    assert body["items"][0]["id"] == p["id"]
+    one = c.get(f"/multi-agent/proposals/{p['id']}")
+    assert one.status_code == 200
+    assert one.json()["status"] == "pending"
+    bad = c.get("/multi-agent/proposals?status=nope")
+    assert bad.status_code == 400
+    return f"total={body['total']} status=pending"
+
+
+def t18_stale_executing_recovered():
+    approvals.reset()
+    p = approvals.create_proposal(
+        "add_todo", {"name": "卡住的写操作"}, "新增待办：「卡住的写操作」"
+    )
+    other = ProposalStore()
+    claimed = other.claim(p["id"])
+    assert claimed["status"] == "executing"
+    conn = sqlite3.connect(db_path())
+    try:
+        conn.execute(
+            "UPDATE agent_proposals SET claimed_at=? WHERE id=?",
+            (time.time() - 120, p["id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    c = TestClient(main.app)
+    audit = c.get(f"/multi-agent/proposals/{p['id']}").json()
+    assert audit["status"] == "failed"
+    assert audit["result"]["error"] == "stale_executing"
+    r = c.post(
+        "/multi-agent/approve",
+        json={"proposal_id": p["id"], "approved": True},
+    )
+    assert r.status_code == 404
+    return "executing -> failed, approve=404"
+
+
+def t19_stats_includes_proposals():
+    approvals.reset()
+
+    p1 = approvals.create_proposal(
+        "add_todo", {"name": "统计一"}, "新增待办：「统计一」"
+    )
+    approvals.claim_proposal(p1["id"])
+    approvals.finish_proposal(p1["id"], "executed", {"message": "ok"})
+
+    p2 = approvals.create_proposal(
+        "add_todo", {"name": "统计二"}, "新增待办：「统计二」"
+    )
+    approvals.cancel_proposal(p2["id"])
+
+    p3 = approvals.create_proposal(
+        "add_todo", {"name": "统计三"}, "新增待办：「统计三」"
+    )
+    approvals.claim_proposal(p3["id"])
+    conn = sqlite3.connect(db_path())
+    try:
+        conn.execute(
+            "UPDATE agent_proposals SET claimed_at=? WHERE id=?",
+            (time.time() - 120, p3["id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    c = TestClient(main.app)
+    r = c.get("/stats?days=7")
+    assert r.status_code == 200
+    p = r.json()["proposals"]
+    assert p["total"] == 3
+    assert p["by_status"]["executed"] == 1
+    assert p["by_status"]["cancelled"] == 1
+    assert p["by_status"]["failed"] == 1
+    assert p["stale_recovered"] == 1
+    assert p["approval_rate"] == 0.333
+    assert p["avg_decision_ms"] >= 0
+    return f"total={p['total']} stale={p['stale_recovered']} approval={p['approval_rate']}"
+
+
 def run(name, fn):
     try:
         return name, True, fn() or ""
@@ -439,6 +536,9 @@ def main_run():
         run("T14 过期 HTTP", t14_expired_http),
         run("T15 写入 + 文档", t15_write_plus_docs),
         run("T16 重启后可见", t16_proposal_survives_store_instance),
+        run("T17 审计查询", t17_audit_list_get),
+        run("T18 stale 回收", t18_stale_executing_recovered),
+        run("T19 /stats 审计", t19_stats_includes_proposals),
     ]
     print()
     for name, ok, detail in results:

@@ -19,9 +19,9 @@
 | 演示 | 在线静态回放（GitHub Pages）+ 本地 `GET /rag-ui`（单文件，无 CDN 依赖） |
 | 本地文档 | `GET /docs`（Swagger 静态资源自托管，不依赖境外 CDN） |
 | MCP server | `mcp_server.py`（stdio，5 个工具 + 2 个资源） |
-| 可观测 | 事件日志（JSONL）+ `GET /stats` 汇总 + `GET /stats-ui` 面板（次数 / 延迟 / p95 / token / 成本） |
+| 可观测 | 事件日志（JSONL）+ `GET /stats` 汇总（次数 / 延迟 / p95 / token / 成本 + proposal 审计）+ `GET /stats-ui` 面板 |
 | 答案校验 | `POST /rag-verify`：多查询改写 + 独立校验 Agent 标注未被资料支持的断言（默认只报告，不自动改写） |
-| 多 Agent | `POST /multi-agent`：Supervisor 路由到 Todo / Docs specialist；Todo 读走确定性 SQLite，写操作生成 SQLite proposal，人工确认后由 `POST /multi-agent/approve` 执行 |
+| 多 Agent | `POST /multi-agent`：Supervisor 路由到 Todo / Docs specialist；Todo 读走确定性 SQLite，写操作生成 SQLite proposal，人工确认后执行；`GET /multi-agent/proposals` 可审计 |
 
 ## 截图
 
@@ -132,7 +132,7 @@ RAG 使用 `corpus/` 下的 15 个文件作为评测语料快照；需要本地 
 .\.venv\Scripts\python.exe tests\e2e_restart.py      # 起两次 uvicorn，验证跨进程持久化
 .\.venv\Scripts\python.exe tests\mcp_smoke.py        # MCP 工具与资源（--with-llm 会跑一次真实问答）
 .\.venv\Scripts\python.exe tests\obs_smoke.py        # 事件日志 → /stats 汇总
-.\.venv\Scripts\python.exe tests\multi_agent_smoke.py # 多 Agent 路由 / proposal 审批 / SQLite 持久化 / HTTP 端点（不联网）
+.\.venv\Scripts\python.exe tests\multi_agent_smoke.py # 多 Agent 路由 / proposal 审批 / SQLite 持久化 / 审计 / HTTP（不联网）
 .\.venv\Scripts\python.exe evals\retrieval_eval.py   # 检索层指标（秒级，不调用模型）
 .\.venv\Scripts\python.exe evals\routing_eval.py     # Supervisor 路由准确率（会调用模型）
 ```
@@ -163,7 +163,7 @@ models/              本地 embedding 模型（不入库）
 - 使用 24M 中文 embedding 模型，对英文代码标识符区分度有限；检索层用 BM25 补齐。
 - 评测集为 10 题，单次运行波动约 ±0.3 分，结论以多次运行与粗指标为准。
 - `todos` 无用户概念；`/redoc`、`/openapi.json` 尚未纳入路由清单的评测锚点。
-- 多 Agent 的写操作需要人工确认；proposal 存在 SQLite `agent_proposals` 表（5 分钟、单次消费），重启不丢；`executing` 阶段崩溃暂无自动回收，公网多用户仍需登录态绑定。
+- 多 Agent 的写操作需要人工确认；proposal 存在 SQLite `agent_proposals` 表（5 分钟、单次消费），重启不丢；stale `executing` 超过 60 秒会标记为 `failed`；公网多用户仍需登录态绑定。
 
 ## License
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import AnswerCard from './components/AnswerCard'
+import ProposalHistory from './components/ProposalHistory'
 
 const EXAMPLES = [
   '这个服务对外暴露了哪些路由？',
@@ -26,6 +27,7 @@ export default function App() {
   const [question, setQuestion] = useState('')
   const [k, setK] = useState(10)
   const [multi, setMulti] = useState(false)
+  const [proposalVersion, setProposalVersion] = useState(0)
   const [items, setItems] = useState(loadHistory)
   const [loading, setLoading] = useState(false)
   const inputRef = useRef(null)
@@ -65,6 +67,7 @@ export default function App() {
       if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`)
 
       const ms = Math.round(performance.now() - t0)
+      if (data.proposal) setProposalVersion((v) => v + 1)
       setItems((prev) =>
         prev.map((it) => (it.id === id ? { ...it, ...data, ms, pending: false } : it))
       )
@@ -95,6 +98,7 @@ export default function App() {
       })
       const data = await resp.json().catch(() => ({}))
       if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`)
+      setProposalVersion((v) => v + 1)
       setItems((prev) =>
         prev.map((it) =>
           it.id === item.id
@@ -115,6 +119,7 @@ export default function App() {
         )
       )
     } catch (e) {
+      setProposalVersion((v) => v + 1)
       setItems((prev) =>
         prev.map((it) =>
           it.id === item.id
@@ -215,6 +220,8 @@ export default function App() {
           </button>
         </div>
       </section>
+
+      <ProposalHistory version={proposalVersion} />
 
       <section className="list">
         {items.length === 0 && (

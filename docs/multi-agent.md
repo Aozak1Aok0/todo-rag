@@ -79,6 +79,7 @@ Todo 读取走确定性代码而不是 LLM，是有意的：待办名称、id、
 | `409` | 执行时目标数据已变化（如待办被删） |
 
 proposal 落在 `TODO_DB` 的 `agent_proposals` 表，服务重启不会丢；`claim` 用 SQLite 条件更新做单次抢占，因此单进程多 worker 也不会重复执行。
+`executing` 超过 `PROPOSAL_STALE_SECONDS`（默认 60 秒）会在下一次 claim / 审计查询时标记为 `failed`，结果里带 `{"error":"stale_executing"}`。
 多用户部署仍需要登录态 / 权限绑定；当前 proposal id 本身就是 bearer token。
 
 ## 4. 接口
@@ -158,6 +159,21 @@ Content-Type: application/json
 | `delete_todo` | `{"todo_id": 3}` | 删除 |
 | `set_completed` | `{"todo_id": 3, "completed": true}` | 标记完成 / 未完成 |
 
+### 4.3 审计查询
+
+```http
+GET /multi-agent/proposals?status=executed&limit=20
+GET /multi-agent/proposals/{proposal_id}
+```
+
+返回 proposal 的 action、args、summary、status、`created_at`、`claimed_at`、`finished_at` 和 `result`。
+`status` 可选：`pending / executing / executed / cancelled / failed / expired`。
+
+前端页面下方有「最近写操作」面板，显示最近 6 条 proposal 的状态与结果。
+和 todo API 一样，审计接口默认没有鉴权，只适合本地单用户；公网部署前必须加登录态。
+
+`GET /stats?days=7` 也会返回 `proposals` 聚合：状态分布、按动作拆分、确认/取消/失败率、stale 回收数、决策耗时与 p95。
+
 ## 5. 文档部分与 `/rag-verify`
 
 Docs Agent 复用 `pipeline.answer_verified`，所以返回里的 `sources` 和 `verification` 只覆盖文档部分；
@@ -201,6 +217,7 @@ Docs Agent 复用 `pipeline.answer_verified`，所以返回里的 `sources` 和 
 - 确认后新增成功，proposal 再消费一次返回 `404`
 - 真实验证还覆盖了「标记完成」和「删除」两种 action
 - 同一个 `TODO_DB` 重启 uvicorn 后，原 proposal 仍能确认执行
+- 审计查询能看到 `pending → executed` 的状态和结果；模拟 stale `executing` 后会自动变成 `failed`
 
 这只是单次采样，不能当成稳定延迟承诺。固定成本主要来自 Docs Agent 的多查询和校验。
 
@@ -216,7 +233,8 @@ Docs Agent 复用 `pipeline.answer_verified`，所以返回里的 `sources` 和 
 - Todo Agent 的全部 / 未完成 / 已完成过滤；
 - Write Planner 生成 proposal，确认前不落库；
 - proposal 落 SQLite，重启后仍可 claim；
-- 确认执行、取消、单次消费、非法 id、过期、目标已变化（409）、标记完成；
+- 确认执行、取消、单次消费、非法 id、过期、目标已变化（409）、stale 回收、标记完成；
+- 审计列表 / 单条查询，以及 `/stats` 中的 proposal 聚合；
 - todos / docs / both 三条路径与 trace；
 - `POST /multi-agent` 和 `POST /multi-agent/approve` HTTP 端点。
 
@@ -224,8 +242,8 @@ Docs Agent 复用 `pipeline.answer_verified`，所以返回里的 `sources` 和 
 
 ## 9. 已知限制与下一步
 
-- proposal 已落 SQLite，重启不丢；但进程如果在 `executing` 阶段崩溃，当前还没有自动回收/重试策略。
+- proposal 已落 SQLite，重启不丢；stale `executing` 会标记为 `failed`，但不会自动重试，需要重新发起。
 - proposal id 是 bearer token，没有额外鉴权；本地单用户可用，公网部署需要登录态。
 - route=both 且有待确认写操作时，不做 LLM 汇总，直接拼接「待办 + 文档」，避免模型改写 proposal 文案。
 - route=both 目前顺序执行（Todo 很快，Docs 是瓶颈）；可以把 Todo 与 Docs 放进 `asyncio.gather`，但收益很小。
-- 下一步可以做：stale `executing` 回收、proposal 用户绑定、把 write planner 的提议/确认/执行轨迹写进 `/stats`、按文件/模块拆多个 Docs specialist。
+- 下一步可以做：proposal 用户绑定、把 write planner 的模型调用 trace 写进事件日志、按文件/模块拆多个 Docs specialist。

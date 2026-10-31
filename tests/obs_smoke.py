@@ -90,5 +90,7 @@ assert ("agent", "POST /agent-raw") in kinds
 agent = next(g for g in s["groups"] if g["name"] == "POST /agent-raw")
 assert agent["tokens_in"] == 100 and agent["tokens_out"] == 20, agent
 assert s["totals"]["tokens_in"] > 0
+assert "proposals" in s
+assert s["proposals"]["total"] == 0
 
 print("\nOBS OK")
