@@ -2,7 +2,7 @@
 
 > 代码：`agents/orchestrator.py`、`agents/write_planner.py`、`agents/approvals.py`、`agents/todo_writes.py`
 > 接口：`POST /multi-agent`、`POST /multi-agent/approve`
-> 测试：`tests/multi_agent_smoke.py` · 路由评测：`evals/routing_eval.py`
+> 测试：`tests/multi_agent_smoke.py` · 路由评测：`evals/routing_eval.py` · 端到端评测：`evals/multi_agent_eval.py`
 
 ## 1. 它和 `/rag-verify` 有什么区别
 
@@ -179,7 +179,9 @@ GET /multi-agent/proposals/{proposal_id}
 Docs Agent 复用 `pipeline.answer_verified`，所以返回里的 `sources` 和 `verification` 只覆盖文档部分；
 待办事实不参与文档校验。route=both 时 UI 会标成「文档部分校验」。
 
-## 6. 路由评测
+## 6. 评测
+
+### 6.1 路由评测
 
 10 条人工标注问题，覆盖单待办、单文档、混合问题和一个写操作（写请求正确路由到 todos，再由 Write Planner 生成 proposal）：
 
@@ -194,6 +196,22 @@ Docs Agent 复用 `pipeline.answer_verified`，所以返回里的 `sources` 和 
 - 10 次路由合计约 **10–12 s**。
 
 路由评测只测「分派对不对」，不测最终答案质量；答案质量仍由 RAG 的 10 题评测与人工复核负责。
+
+### 6.2 端到端评测
+
+`evals/multi_agent_eval.py` 用临时 `TODO_DB` 跑 8 个案例：
+
+- E1/E2：docs 问答；
+- E3：todos 读取；
+- E4：both（待办 + 文档）；
+- E5：新增待办 proposal → 批准 → 落库；
+- E6：标记完成 proposal → 批准 → 状态变更；
+- E7：删除 proposal → 批准 → 删除；
+- E8：删除不存在的 id → `needs_clarification`，不生成 proposal。
+
+实测（2026-11-01，DeepSeek `deepseek-chat`）：**8/8 通过**，总用量 `22511 in / 2845 out` tokens。
+
+初版 E2「todos 表里有哪些字段？」曾被 Supervisor 误路由到 todos；加入「字段 / 表结构 / DDL / schema」规则兜底后，稳定走 docs。这也是路由评测之外还需要端到端评测的原因：路由对了不代表答案类型对。
 
 ## 7. 实测样例
 
@@ -225,6 +243,7 @@ Docs Agent 复用 `pipeline.answer_verified`，所以返回里的 `sources` 和 
 
 ```powershell
 .\.venv\Scripts\python.exe tests\multi_agent_smoke.py
+.\.venv\Scripts\python.exe evals\multi_agent_eval.py
 ```
 
 离线测试不联网、不花 token，覆盖：

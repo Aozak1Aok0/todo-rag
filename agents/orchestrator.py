@@ -70,6 +70,17 @@ def is_write_request(question):
     return any(x in (question or "") for x in marks)
 
 
+def looks_like_schema_question(question):
+    q = (question or "").lower()
+    return (
+        "字段" in q
+        or "表结构" in q
+        or "schema" in q
+        or "ddl" in q
+        or ("表" in q and "列" in q)
+    )
+
+
 def build_supervisor_messages(question):
     user = (
         f"用户问题：{question}\n\n"
@@ -80,6 +91,7 @@ def build_supervisor_messages(question):
         "- 只查询待办/完成状态 → todos + intent=read\n"
         "- 新增、删除、修改待办完成状态 → todos + intent=write；只生成 proposal，不执行\n"
         "- 只问代码、接口、实现、配置 → docs\n"
+        "- 问表结构/字段/DDL/schema，即使包含 todos 这个词，也选 docs\n"
         "- 同时问待办和代码/文档 → both，并把问题拆成两个子问题；有写操作时 intent=write\n"
         "- 不确定时选 docs\n"
         "- 非 both 时，另一个 query 可以为空"
@@ -113,6 +125,11 @@ def parse_plan(text, question):
         docs_query = question
     if route in {"todos", "both"} and not todos_query:
         todos_query = question
+
+    if route == "todos" and intent == "read" and looks_like_schema_question(question):
+        # “todos 表有哪些字段”是代码/DDL 问题，不是待办列表查询
+        route = "docs"
+        docs_query = docs_query or question
 
     return {
         "route": route,

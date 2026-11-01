@@ -119,6 +119,11 @@ def t1_parse_plan():
     assert both["todos_query"] == "全部待办"
     assert orchestrator.parse_plan("不是 JSON", "原问题")["route"] == "docs"
     assert orchestrator.parse_plan("不是 JSON", "把学 Rust 加到待办")["intent"] == "write"
+    schema = orchestrator.parse_plan(
+        route_json("todos"), "todos 表里有哪些字段？"
+    )
+    assert schema["route"] == "docs"
+    assert schema["docs_query"] == "todos 表里有哪些字段？"
     todos = [{"id": 1, "name": "x", "completed": False}]
     assert parse_proposal(
         '{"action":"complete_todo","args":{"todo_id":1}}', todos

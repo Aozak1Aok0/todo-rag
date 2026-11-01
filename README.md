@@ -77,8 +77,10 @@
 - `evals/q8-prompt-ab.md` —— 提示词 A/B/C 对比与假纠正分析
 - `docs/dual-agent.md` —— 双 Agent、校验的负结果、查询改写实测
 - `docs/multi-agent.md` —— Supervisor + Todo / Docs 多 Agent、路由评测与只读边界
+- `evals/multi_agent_eval.py` —— 8 个端到端案例（read/docs/both + 写 proposal + 批准执行）
 
 多 Agent 路由评测：10 条人工标注问题 **10/10** 路由 + intent 正确（`evals/routing_eval.py`）。
+多 Agent 端到端评测：8/8 通过；覆盖 docs / todos / both、add / set_completed / delete proposal、非法 id clarify；`22511 in / 2845 out` tokens（`evals/multi_agent_eval.py`）。
 
 ## MCP
 
@@ -135,6 +137,7 @@ RAG 使用 `corpus/` 下的 15 个文件作为评测语料快照；需要本地 
 .\.venv\Scripts\python.exe tests\multi_agent_smoke.py # 多 Agent 路由 / proposal 审批 / SQLite 持久化 / 审计 / HTTP（不联网）
 .\.venv\Scripts\python.exe evals\retrieval_eval.py   # 检索层指标（秒级，不调用模型）
 .\.venv\Scripts\python.exe evals\routing_eval.py     # Supervisor 路由准确率（会调用模型）
+.\.venv\Scripts\python.exe evals\multi_agent_eval.py # 多 Agent 端到端：读/写/审批（会调用模型）
 ```
 
 ## 目录
