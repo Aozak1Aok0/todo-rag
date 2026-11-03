@@ -77,6 +77,9 @@
 - `evals/q8-prompt-ab.md` —— 提示词 A/B/C 对比与假纠正分析
 - `docs/dual-agent.md` —— 双 Agent、校验的负结果、查询改写实测
 - `docs/multi-agent.md` —— Supervisor + Todo / Docs 多 Agent、路由评测与只读边界
+- `docs/single-agent.md` —— 单 Agent vs 多 Agent 同题对照（8/8 vs 8/8，token 结构差异）
+- `docs/rerank.md` —— bge-reranker-base 的 A/B 与负结果（+4.3s，指标不动）
+- `evals/rag-eval-40.md` —— 40 题评测集（30 train / 10 holdout）、LLM 判分器校准、题级失分审计
 - `evals/multi_agent_eval.py` —— 8 个端到端案例（read/docs/both + 写 proposal + 批准执行）
 
 多 Agent 路由评测：10 条人工标注问题 **10/10** 路由 + intent 正确（`evals/routing_eval.py`）。

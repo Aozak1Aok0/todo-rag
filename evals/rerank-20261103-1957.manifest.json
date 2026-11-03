@@ -1,0 +1,49 @@
+{
+  "time": "2026-11-03T19:58:37",
+  "model": "BAAI/bge-reranker-base",
+  "pool": 20,
+  "k": 5,
+  "questions": [
+    "Q1",
+    "Q2",
+    "Q3",
+    "Q4",
+    "Q5",
+    "Q6",
+    "Q7",
+    "Q8",
+    "Q9",
+    "Q10"
+  ],
+  "eval_file": "D:\\Experienment.py\\todo-rag\\evals\\rag-eval-10.jsonl",
+  "rows": 10,
+  "base": {
+    "n": 10,
+    "hit@1": 7,
+    "hit@3": 10,
+    "hit@5": 10,
+    "mrr": 0.85,
+    "ndcg@5": 0.899,
+    "chunk@1": 7,
+    "chunk@3": 10,
+    "chunk_mrr": 0.817
+  },
+  "rerank": {
+    "n": 10,
+    "hit@1": 7,
+    "hit@3": 10,
+    "hit@5": 10,
+    "mrr": 0.85,
+    "ndcg@5": 0.892,
+    "chunk@1": 7,
+    "chunk@3": 10,
+    "chunk_mrr": 0.85
+  },
+  "latency_ms": {
+    "retrieve_p50": 17.3,
+    "retrieve_p95": 327.8,
+    "rerank_p50": 4323.9,
+    "rerank_p95": 4544.7
+  },
+  "model_dir": "D:\\Experienment.py\\todo-rag\\models\\bge-reranker-base"
+}
