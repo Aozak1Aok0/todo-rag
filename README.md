@@ -153,6 +153,14 @@ RAG 使用 `corpus/` 下的 15 个文件作为评测语料快照；需要本地 
 .\.venv\Scripts\python.exe evals\multi_agent_eval.py # 多 Agent 端到端：读/写/审批（会调用模型）
 ```
 
+提交前自检（公开仓库里不应出现个人信息、本机绝对路径或密钥）：
+
+```bash
+bash scripts/preflight.sh --staged
+```
+
+CI 也会对全仓库跑一遍 `bash scripts/preflight.sh`。
+
 ## 目录
 
 ```
