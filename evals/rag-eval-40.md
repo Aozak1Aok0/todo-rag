@@ -1,7 +1,8 @@
 # RAG 评估集 40 题 · v0.3
 
-> 2026-11-03 · 条件 ③（RAG）· deepseek-chat · temperature=0
-> 数据：`rag-eval-40-baseline.jsonl`（40 行）· 判分：`judge-40.jsonl` / `judge-40.md`
+> 2026-11-04 · deepseek-chat · temperature=0
+> 数据：`rag-eval-40-baseline.jsonl`（条件 ③）、`rag-eval-40-3cond.jsonl`（三条件，120 行）
+> 判分：`judge-40.jsonl` / `judge-40.md`、`judge-3cond.jsonl` / `judge-3cond.md`
 
 ## 1. 为什么从 10 题扩到 40
 
@@ -25,40 +26,44 @@
 ## 3. 怎么跑
 
 ```powershell
-# 1) 生成答案（条件 ③ RAG）
-.\.venv\Scripts\python.exe evals\run_baseline.py --eval evals\rag-eval-40.jsonl --conditions rag `
-    --out evals\rag-eval-40-baseline.jsonl
+# 1) 三条件一起跑（noctx / fullctx / rag）
+.\\.venv\\Scripts\\python.exe evals\\run_baseline.py --eval evals\\rag-eval-40.jsonl `
+    --conditions noctx,fullctx,rag --out evals\\rag-eval-40-3cond.jsonl
 
 # 2) LLM 判分（自动带 gold_sources + 检索到的文件全文作对照）
-.\.venv\Scripts\python.exe evals\judge.py --answers evals\rag-eval-40-baseline.jsonl `
-    --out evals\judge-40.jsonl
+.\\.venv\\Scripts\\python.exe evals\\judge.py --answers evals\\rag-eval-40-3cond.jsonl `
+    --out evals\\judge-3cond.jsonl
 ```
 
 `judge.py` 的 key 先读 `DEEPSEEK_API_KEY`，再退到 Windows 凭据；`--no-context` 可关掉语料对照（不建议）。
+`run_baseline.py` 的语料根是 `corpus/`（manifest `evals/corpus.txt` 的路径相对于它）。
 
-## 4. 结果（2026-11-03）
+## 4. 结果（40 题，2026-11-04）
 
-| 口径 | 值 |
-|---|---|
-| 要点命中 | **117 / 170 = 68.8%** |
-| train（30 题） | 90 / 130 = 69.2% |
-| holdout（10 题） | 27 / 40 = 67.5% |
-| 幻觉题 | 2 / 40 = 5%（Q7、Q18） |
-| Q1–Q10 子集 | 79.1%（旧 10 题集人工口径 8.56/10） |
+| 条件 | 要点命中 | train | holdout | 幻觉题 | 平均输入 token |
+|---|---|---|---|---|---|
+| ① noctx（无资料） | 81 / 169 = **47.9%** | 48.1% | 47.5% | 19 / 40 | 41 |
+| ② fullctx（全语料 31.5K 字符） | 151 / 169 = **89.3%** | 89.9% | 87.5% | 0 / 40 | 9,692 |
+| ③ RAG（检索 top-k） | 126 / 169 = **74.6%** | 75.2% | 72.5% | 1 / 40 | 1,470 |
 
-按难度：1 档 79.3% · 2 档 65.8% · 3 档 69.6% · 4 档 55.6%。按题型：事实题 73%、代码推理 60%、跨文件 67%、拒答 64%。
+- **有资料 vs 没资料**：fullctx 比 noctx 高 41.4 个点，幻觉从 19 题降到 0。
+- **RAG 用 15% 的 token 拿到 fullctx 84% 的分数**（1470 vs 9692），代价是 14.7 个点和 1 题幻觉。
+- Q1–Q10 子集：noctx 37.2% / fullctx 95.3% / rag 79.1%，与旧 10 题集的人工口径（1.00 / 9.42 / 8.56）方向一致。
+- holdout 与 train 差 1–3 个点，说明题目不是照着实现写的。
 
-**这不是回归。** 旧 8.56/10 是 commit `dad0e13` 上 10 道事实题的分数；新集里 22 道是跨文件/机制/陷阱题，且 Q1–Q10 子集在本次跑分仍是 79.1%。holdout 与 train 只差 1.7 个点，说明题目不是照着实现写的。
+**口径警告（noctx）**：47.9% 是上限，不是「无资料也能答对一半」。判分器会把「猜中通用行为」的答案算命中——旧 10 题集人工口径下 noctx 只有 1.00/10，而同一批题在本判分器下是 37.2%。引用 noctx 时务必带上这句。
 
-### 主要失分点（人工复核后）
+### 主要失分点（RAG 条件，人工复核过）
 
 | 题 | 得分 | 原因 |
 |---|---|---|
-| Q3 | 0 / 4 | 问 FastAPI 启动种子数据，检索只给了 main.py 结构概览，模型答「资料中没有」——检索没召回 `store.py` 的 `_seed()` |
-| Q21 | 0 / 4 | 问 `/rag` 与 `/chat` 的 temperature 取舍；`/chat` 函数体没被召回，模型据实拒答。**题目本身偏推断，待复核** |
-| Q25 | 0 / 3 | 问 `sort` / `sorted` / `[:]`；旧要点里混了 `del` / `remove`（与题干无关），已修订为 3 个要点 |
-| Q39 | 0 / 4 | 问测试与 CI；`package.json` 没被召回，模型答「资料中没有」。**属于检索失败，不是答错** |
-| Q17 | 1 / 5 | 长链路机制题（tool 消息顺序），只答对开头 |
+| Q3 | 0 / 4 | 问 FastAPI 启动种子数据，检索只给了 main.py 结构概览，没召回 `store.py`，模型答「资料中没有」 |
+| Q17 | 1 / 5 | 两边 DELETE 差异题，模型错误声称响应内容缺失，并编造了一条不存在的差异（本集唯一幻觉） |
+| Q24 | 1 / 5 | `points.essential` 的 `*args` / `del` / `pop` 机制只答对元组打包 |
+| Q32 | 1 / 3 | `/rag` 的 `k` 默认值与范围没说对，反而断言资料未给出 |
+| Q18 | 2 / 5 | `express.json()` 的作用答对，但 PATCH 的三条校验全部没答 |
+
+Q3、Q17、Q18、Q39 的共同点：**答案本身没错，是检索没把关键文件召回**。这比「模型答错」更值得修，也是后面 rerank / 混合检索要解决的问题。
 
 ## 5. 判分器校准
 
@@ -70,11 +75,18 @@
 | 平均绝对误差 | 0.2 分/题 |
 | 幻觉判定一致 | 10 / 10 |
 
-已知偏差：Q6 判宽 1 分（兜底分支没答也算命中），Q7 判严 1 分（模型诚实说「资料未展示」被记为未命中）。**结论：judge 可用于看趋势和批量回归，不能替代里程碑前的人工抽检（20%，holdout 全查）。**
+另抽 8 题（Q2/Q7/Q13/Q18/Q22/Q27/Q33/Q39）人工复核：6/8 完全一致，2 题 judge 偏宽（Q7 +1、Q13 +2），平均 +0.4 分/题。
+
+已知偏差：
+- 对「猜中通用行为」偏宽（noctx 被高估，见上）。
+- 对「诚实说资料没有」判严（该要点记未命中，符合「说出来了没有」的口径，但会让拒答题显得低分）。
+- 长答案截断到 512 token 后，机制题的多步要点容易漏判。
+
+**结论：judge 可用于看趋势和批量回归，不能替代里程碑前的人工抽检（20%，holdout 全查）。**
 
 ## 6. 待办
 
-1. Q21 改写或降级为「推断题」，避免把「据实拒答」判成 0。
-2. Q39 保留为检索失败样例，但在报告里单列，不与知识题混算。
-3. 下一步跑三条件对比（noctx / fullctx / rag）到 40 题，给出「有资料值多少分」的新数字。
-4. 把 `judge.py` 接进 CI 的离线任务（只跑 train、限 10 题、失败即红）。
+1. CI 接入离线判分任务（只跑 train、限 10 题、失败即红）。
+2. 补 4 道 must_refuse 题的人工复核（当前 3/4 命中拒答口径）。
+3. 修 Q3 / Q18 / Q39 的检索召回（`store.py`、`server.js` 的 PATCH 段、`package.json`）。
+4. 用本集重跑 `docs/rerank.md` 的结论：10 题饱和是 rerank 无效的原因之一，40 题集上值得再试一次。

@@ -1,5 +1,5 @@
 ﻿# 真·重启测试：起两次 uvicorn 子进程（共享同一个临时 DB），验证数据跨进程存活。
-import os, subprocess, sys, tempfile, time
+import os, subprocess, tempfile, time
 from pathlib import Path
 import httpx
 

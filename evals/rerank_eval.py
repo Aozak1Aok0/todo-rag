@@ -230,7 +230,7 @@ def main():
 
     md = [f"# rerank 评测 {tag}", "",
           f"- 池：{args.pool} · top-{args.k} · 题数：{len(questions)} · 模型：`{args.model}`",
-          f"- 变体：base（生产顺序）vs rerank（纯排序，不还原点名文件的置顶规则）", "",
+          "- 变体：base（生产顺序）vs rerank（纯排序，不还原点名文件的置顶规则）", "",
           "| 指标 | base | rerank | Δ |", "|---|---|---|---|"]
     for key in ["hit@1", "hit@3", f"hit@{args.k}", "mrr", "ndcg@5", "chunk@1", "chunk@3", "chunk_mrr"]:
         md.append(f"| {key} | {s_base[key]} | {s_rr[key]} | {s_rr[key] - s_base[key]:+.3f} |")

@@ -1,0 +1,5 @@
+# 开发期依赖（CI 与本地测试）；运行期依赖见 requirements.txt
+-r requirements.txt
+
+pytest>=8
+ruff>=0.6

@@ -30,7 +30,7 @@ from openai import OpenAI
 
 HERE = Path(__file__).resolve().parent          # evals/
 APP = HERE.parent                                # fastapi-api/
-PRA = APP.parent.parent                          # pra/
+PRA = APP / "corpus"                             # 语料根目录（manifest 路径相对于此）
 if str(APP) not in sys.path:                      # 让 rag/ 可导入
     sys.path.insert(0, str(APP))
 
@@ -102,7 +102,7 @@ def build_messages(condition: str, question: str, corpus: str):
 def git(*args: str) -> str:
     try:
         r = subprocess.run(
-            ["git", "-C", str(PRA), *args],
+            ["git", "-C", str(APP), *args],
             capture_output=True, text=True, timeout=10,
         )
         return r.stdout.strip()

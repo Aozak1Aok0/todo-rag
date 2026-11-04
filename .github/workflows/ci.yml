@@ -1,0 +1,29 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 安装开发依赖
+        run: pip install pytest ruff
+
+      - name: 语法与未定义名检查
+        run: ruff check --select E9,F --exclude .venv --exclude web --exclude models .
+
+      - name: 编译检查
+        run: python -m compileall -q main.py store.py obs.py agents rag evals mcp_server.py
+
+      - name: 单元测试（纯 SQLite，不需要 API key）
+        run: python -m pytest -q tests/test_store.py tests/test_approvals.py
