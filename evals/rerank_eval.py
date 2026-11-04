@@ -171,10 +171,10 @@ def main():
             reranked_hits, rerank_chunk = pool, base_chunk
 
         base_rows.append({"id": q["id"], "variant": "base", "rank": base_rank,
-                          "chunk_rank": base_chunk,
+                          "chunk_rank": base_chunk, "coverage": round(len(set(base_order[: args.k]) & gold) / len(gold), 3),
                           "order": base_order, "ndcg@5": ndcg_at(base_order, gold, args.k)})
         rr_rows.append({"id": q["id"], "variant": "rerank", "rank": rerank_rank,
-                        "chunk_rank": rerank_chunk,
+                        "chunk_rank": rerank_chunk, "coverage": round(len(set(rerank_order[: args.k]) & gold) / len(gold), 3),
                         "order": rerank_order, "ndcg@5": ndcg_at(rerank_order, gold, args.k)})
         rows.append({
             "id": q["id"],
@@ -206,6 +206,8 @@ def main():
             f"hit@{args.k}": sum(1 for r in ranks if r and r <= args.k),
             "mrr": round(sum(1.0 / r for r in ranks if r) / n, 3),
             "ndcg@5": round(sum(r["ndcg@5"] for r in rows_) / n, 3),
+            "coverage": round(sum(r["coverage"] for r in rows_) / n, 3),
+            "all_gold": sum(1 for r in rows_ if r["coverage"] >= 1.0),
             "chunk@1": sum(1 for c in chunks if c and c <= 1),
             "chunk@3": sum(1 for c in chunks if c and c <= 3),
             "chunk_mrr": round(sum(1.0 / c for c in chunks if c) / n, 3),
@@ -216,7 +218,7 @@ def main():
 
     print("-" * 78)
     print(f"{'指标':<10} {'base':<12} {'rerank':<12} {'Δ'}")
-    for key in ["hit@1", "hit@3", f"hit@{args.k}", "mrr", "ndcg@5", "chunk@1", "chunk@3", "chunk_mrr"]:
+    for key in ["hit@1", "hit@3", f"hit@{args.k}", "mrr", "ndcg@5", "coverage", "all_gold", "chunk@1", "chunk@3", "chunk_mrr"]:
         d = s_rr[key] - s_base[key]
         print(f"{key:<10} {str(s_base[key]):<12} {str(s_rr[key]):<12} {d:+.3f}")
     if rerank_ms:
@@ -232,7 +234,7 @@ def main():
           f"- 池：{args.pool} · top-{args.k} · 题数：{len(questions)} · 模型：`{args.model}`",
           "- 变体：base（生产顺序）vs rerank（纯排序，不还原点名文件的置顶规则）", "",
           "| 指标 | base | rerank | Δ |", "|---|---|---|---|"]
-    for key in ["hit@1", "hit@3", f"hit@{args.k}", "mrr", "ndcg@5", "chunk@1", "chunk@3", "chunk_mrr"]:
+    for key in ["hit@1", "hit@3", f"hit@{args.k}", "mrr", "ndcg@5", "coverage", "all_gold", "chunk@1", "chunk@3", "chunk_mrr"]:
         md.append(f"| {key} | {s_base[key]} | {s_rr[key]} | {s_rr[key] - s_base[key]:+.3f} |")
     if rerank_ms:
         md += ["", f"延迟：retrieve p50/p95 = {pct(base_ms, 50):.0f}/{pct(base_ms, 95):.0f} ms；"
