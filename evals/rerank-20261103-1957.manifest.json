@@ -15,7 +15,7 @@
     "Q9",
     "Q10"
   ],
-  "eval_file": "D:\\Experienment.py\\todo-rag\\evals\\rag-eval-10.jsonl",
+  "eval_file": "D:evals\\rag-eval-10.jsonl",
   "rows": 10,
   "base": {
     "n": 10,
@@ -45,5 +45,5 @@
     "rerank_p50": 4323.9,
     "rerank_p95": 4544.7
   },
-  "model_dir": "D:\\Experienment.py\\todo-rag\\models\\bge-reranker-base"
+  "model_dir": "D:models\\bge-reranker-base"
 }

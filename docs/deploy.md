@@ -20,7 +20,7 @@
 2. 运行发布脚本（会把静态文件推到一个独立的 `gh-pages` 分支；远端已存在时加 `-Force`）：
 
 ```powershell
-cd D:\Experienment.py\todo-rag
+cd todo-rag
 powershell -NoProfile -ExecutionPolicy Bypass -File deploy\gh-pages\publish.ps1 -Force
 ```
 
@@ -64,10 +64,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File deploy\gh-pages\publish.ps1 
 
 排错：直连域名 404 = Space 未 Running / 私有 / 文件在子目录；用无痕窗口确认可见性。
 
-## 3. 本地完整交互（面试演示用）
+## 3. 本地完整交互（现场演示用）
 
 ```powershell
-cd D:\Experienment.py\todo-rag
+cd todo-rag
 .\.venv\Scripts\python.exe -m uvicorn main:app --port 8000
 
 # 另一个终端

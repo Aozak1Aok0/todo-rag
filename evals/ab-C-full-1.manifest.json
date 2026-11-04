@@ -25,7 +25,7 @@
   ],
   "rag_prompt": "C",
   "corpus_chars": 25803,
-  "corpus_manifest": "D:\\Experienment.py\\basic\\pra\\python\\fastapi-api\\evals\\corpus.txt",
+  "corpus_manifest": "D:evals\\corpus.txt",
   "rows": 10,
   "elapsed_s": 17.6
 }

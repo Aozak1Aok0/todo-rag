@@ -357,13 +357,15 @@ LIST_Q = re.compile(r"哪些|全部|所有|清单|列表|都有|概览|列举")
 ROUTE_MARK = re.compile(r"L\d+: (GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\b")
 
 
-def retrieve(question: str, k: int = DEFAULT_K, mode: str = "hybrid"):
-    """mode: hybrid（默认，向量+BM25 的 RRF 融合）/ dense / lex。
+def retrieve(question: str, k: int = DEFAULT_K, mode: str = "hybrid", per_file: int = 0):
+    """per_file: 每个文件最多保留几块（0 = 关，环境变量 RAG_PER_FILE 可调）。
 
+    mode: hybrid（默认，向量+BM25 的 RRF 融合）/ dense / lex。
     hybrid 上叠了两条可解释的小规则（都不是权重魔改）：
       1) 问题点名了文件（如 server.js / notes.txt）→ 保证该文件至少一块进上下文；
       2) 「哪些/全部/清单/列表」类问题 → 附带最相关文件的结构概览块。
     """
+    per_file = per_file or int(os.getenv("RAG_PER_FILE", "0"))
     if mode == "dense":
         return retrieve_dense(question, k)
 
@@ -417,6 +419,19 @@ def retrieve(question: str, k: int = DEFAULT_K, mode: str = "hybrid"):
         if chosen and chosen not in ranked[:k]:
             ranked = [c for c in ranked if c != chosen]
             ranked.insert(min(k - 1, len(ranked)), chosen)
+
+    # 规则 3（可选）：每文件最多 per_file 块，避免同一文件的多个块吃满 k 个槽位。
+    # 被挤掉的块按原顺序追加到末尾，保证 %k 仍然是满的（补位而非丢弃）。
+    if per_file > 0:
+        picked, dropped, counts = [], [], {}
+        for cid in ranked:
+            src = metas[pos[cid]]["source"]
+            if counts.get(src, 0) >= per_file:
+                dropped.append(cid)
+                continue
+            counts[src] = counts.get(src, 0) + 1
+            picked.append(cid)
+        ranked = picked + dropped
 
     out = []
     by_id = {h["id"]: h for h in dense}

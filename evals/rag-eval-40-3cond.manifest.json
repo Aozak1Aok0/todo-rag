@@ -58,7 +58,7 @@
   ],
   "rag_prompt": "C",
   "corpus_chars": 0,
-  "corpus_manifest": "D:\\Experienment.py\\todo-rag\\evals\\corpus.txt",
+  "corpus_manifest": "D:evals\\corpus.txt",
   "rows": 120,
   "elapsed_s": 165.9
 }

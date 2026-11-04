@@ -75,5 +75,5 @@
     "rerank_p50": 10162.7,
     "rerank_p95": 12695.4
   },
-  "model_dir": "D:\\Experienment.py\\todo-rag\\models\\bge-reranker-base"
+  "model_dir": "D:models\\bge-reranker-base"
 }

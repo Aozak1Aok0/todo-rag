@@ -21,7 +21,7 @@
 
 字段：`id / type / difficulty / split / question / expected_points / gold_sources / must_refuse / notes / eval_version`。`gold_sources` 带 `pra/` 前缀，判分器会自动去掉再读 `corpus/`。
 
-**holdout 规则**：Q31–Q40 只在里程碑（版本冻结、面试前）跑，平时调参只看 train。
+**holdout 规则**：Q31–Q40 只在里程碑（版本冻结前）跑，平时调参只看 train。
 
 ## 3. 怎么跑
 
